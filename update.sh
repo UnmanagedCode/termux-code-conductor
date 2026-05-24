@@ -121,9 +121,15 @@ if [ "$HARNESS_PKG_CHANGED" = "1" ]; then
 fi
 
 if [ "$CC_CHANGED" = "1" ] && [ "$RESTART" = "1" ]; then
-    if pgrep -f "node $CC_DIR/server.js" >/dev/null 2>&1; then
+    if curl -sf "http://127.0.0.1:8787/" >/dev/null 2>&1; then
         log "Restarting Code Conductor server (code changed)"
-        pkill -f "node $CC_DIR/server.js" || true
+        # Stop every node server.js process whose cwd is $CC_DIR (matches both
+        # 'node server.js' from `npm start` and 'node /abs/.../server.js' from
+        # the self-respawn path).
+        for pid in $(pgrep -f 'node.*server\.js' 2>/dev/null); do
+            cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
+            [ "$cwd" = "$CC_DIR" ] && kill "$pid" 2>/dev/null || true
+        done
         sleep 1
         ( cd "$CC_DIR" && PROJECTS_ROOT="$CC_PROJECTS_DIR" nohup "$NPM" start >server.log 2>&1 & )
         for i in $(seq 1 10); do

@@ -36,7 +36,20 @@ cc-start() {
         && echo "Code Conductor starting at $CC_LOCAL_URL (logs: $CC_DIR/server.log)"
 }
 cc-stop() {
-    pkill -f "node $CC_DIR/server.js" && echo "Code Conductor stopped" || echo "no Code Conductor process running"
+    # Kill every node server.js process whose cwd is $CC_DIR. This catches
+    # both 'node server.js' (started via npm start) and 'node /abs/.../server.js'
+    # (started via the in-process self-respawn).
+    local pid cwd pids=""
+    for pid in \$(pgrep -f 'node.*server\\.js' 2>/dev/null); do
+        cwd=\$(readlink "/proc/\$pid/cwd" 2>/dev/null) || continue
+        [ "\$cwd" = "$CC_DIR" ] && pids="\$pids \$pid"
+    done
+    if [ -n "\$pids" ]; then
+        kill \$pids 2>/dev/null
+        echo "Code Conductor stopped"
+    else
+        echo "no Code Conductor process running"
+    fi
 }
 cc-logs() { tail -f "$CC_DIR/server.log"; }
 cc-update() { bash "$REPO/update.sh" "\$@"; }
