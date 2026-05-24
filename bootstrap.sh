@@ -185,3 +185,24 @@ Aliases + dispatcher registered in ~/.bashrc:
 
 Run \`source ~/.bashrc\` (or open a new Termux session) to pick them up.
 EOF
+
+CC_LOCAL_URL="http://127.0.0.1:8787"
+if [ "$NON_INTERACTIVE" != "1" ] && [ -r /dev/tty ]; then
+    printf '\n%s[?]%s Open the Code Conductor UI in your browser now? [Y/n] ' \
+        "$C_YEL" "$C_NC" >/dev/tty
+    read -r ans </dev/tty || ans=""
+    case "$ans" in
+        ''|[yY]|[yY][eE][sS])
+            if command -v termux-open-url >/dev/null 2>&1; then
+                termux-open-url "$CC_LOCAL_URL" \
+                    || warn "termux-open-url failed — open $CC_LOCAL_URL manually."
+            elif command -v am >/dev/null 2>&1; then
+                am start -a android.intent.action.VIEW -d "$CC_LOCAL_URL" \
+                        >/dev/null 2>&1 \
+                    || warn "Couldn't auto-launch browser. Open $CC_LOCAL_URL manually."
+            else
+                warn "No URL opener available. Open $CC_LOCAL_URL manually."
+            fi
+            ;;
+    esac
+fi

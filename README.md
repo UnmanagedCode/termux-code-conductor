@@ -27,7 +27,7 @@ After running the bootstrap on a clean device you have:
 curl -fsSL https://raw.githubusercontent.com/UnmanagedCode/termux-code-conductor/main/bootstrap.sh | bash
 ```
 
-The script prompts interactively whether to also install the [Playwright harness](#optional-playwright-harness). Use a flag to skip the prompt:
+The script prompts interactively whether to also install the [Playwright harness](#optional-playwright-harness), and at the end offers to open the CC UI in your browser. Use a flag to skip both prompts:
 
 ```bash
 # include the harness, no prompt
@@ -55,7 +55,7 @@ cd ~/cc-projects/termux-code-conductor
 | Flag | Meaning |
 |---|---|
 | `--with-playwright` | Install termux-playwright-harness. Skips the prompt. |
-| `-y`, `--yes`, `--non-interactive` | Never prompt. Defaults to **no** harness. |
+| `-y`, `--yes`, `--non-interactive` | Never prompt. Defaults to **no** harness and **does not** open the browser. |
 | `-h`, `--help` | Print the header comment and exit. |
 
 ## Install Termux
