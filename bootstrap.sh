@@ -131,9 +131,12 @@ if [ -z "$WITH_PLAYWRIGHT" ]; then
 fi
 
 # Mark the bootstrap repo itself as part of the CC-Dev group
-# (only when it lives inside ~/cc-projects, i.e. after the self-bootstrap)
+# (only when it lives inside ~/cc-projects, i.e. after the self-bootstrap).
+# Group metadata lives in Code Conductor's central store at
+# <cc-projects>/.code-conductor/projects/<name>/project.json — not inside
+# the project dir, so the repo's own tree stays clean.
 if [ "$REPO" = "$CLONE_TARGET" ]; then
-    META_DIR="$REPO/.code-conductor"
+    META_DIR="$HOME/cc-projects/.code-conductor/projects/$REPO_NAME"
     if [ ! -f "$META_DIR/project.json" ]; then
         mkdir -p "$META_DIR"
         printf '{\n  "group": "CC-Dev"\n}\n' > "$META_DIR/project.json"

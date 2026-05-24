@@ -43,10 +43,11 @@ else
     ok "Cloned at $(git -C "$CC_DIR" rev-parse --short HEAD)"
 fi
 
-# Assign to the CC-Dev group. The group is metadata stored in
-# <project>/.code-conductor/project.json — Code Conductor reads it on list,
-# no filesystem nesting needed.
-META_DIR="$CC_DIR/.code-conductor"
+# Assign to the CC-Dev group. The group is metadata stored in Code
+# Conductor's central store at
+# <cc-projects>/.code-conductor/projects/<name>/project.json — keeping
+# the project's own tree clean of orchestrator state.
+META_DIR="$CC_PROJECTS_DIR/.code-conductor/projects/code-conductor"
 mkdir -p "$META_DIR"
 cat > "$META_DIR/project.json" <<'EOF'
 {

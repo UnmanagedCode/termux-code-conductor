@@ -42,8 +42,9 @@ else
     ok "Cloned at $(git -C "$HARNESS_DIR" rev-parse --short HEAD)"
 fi
 
-# Assign to the CC-Dev group
-META_DIR="$HARNESS_DIR/.code-conductor"
+# Assign to the CC-Dev group via Code Conductor's central store at
+# <cc-projects>/.code-conductor/projects/<name>/project.json.
+META_DIR="$HOME/cc-projects/.code-conductor/projects/termux-playwright-harness"
 mkdir -p "$META_DIR"
 cat > "$META_DIR/project.json" <<'EOF'
 {
