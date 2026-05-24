@@ -63,7 +63,8 @@ cd ~/cc-projects/termux-code-conductor
 The Google Play version of Termux is **frozen** and won't work. Install from one of:
 
 1. **F-Droid** (recommended) — install the [F-Droid client APK](https://f-droid.org/F-Droid.apk) from f-droid.org, then search "Termux" inside F-Droid and install. Updates flow through F-Droid.
-2. **GitHub releases** — download the latest `termux-app_*.apk` for `arm64-v8a` from <https://github.com/termux/termux-app/releases> and sideload. You'll need to allow installs from your browser/file manager.
+2. **Direct APK** (no F-Droid client needed) — download the F-Droid-signed APK directly: [com.termux_1022.apk](https://f-droid.org/repo/com.termux_1022.apk) (package page: <https://f-droid.org/packages/com.termux/>). Allow installs from your browser/file manager and sideload.
+3. **GitHub releases** — download the latest `termux-app_*.apk` for `arm64-v8a` from <https://github.com/termux/termux-app/releases> and sideload. You'll need to allow installs from your browser/file manager.
 
 After install, open Termux and run once:
 
@@ -178,15 +179,3 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 ├── CLAUDE.md
 └── README.md
 ```
-
-## Maintainer notes
-
-Re-vendor the Claude CLI installer:
-
-```bash
-cp ~/share/claude-install.sh scripts/vendor/claude-install.sh
-chmod +x scripts/vendor/claude-install.sh
-git add scripts/vendor/claude-install.sh && git commit -m "Re-vendor claude-install.sh"
-```
-
-Code Conductor and the Playwright harness no longer live in this repo — push changes to their own repos and run `cc update` on any device to pull them.
