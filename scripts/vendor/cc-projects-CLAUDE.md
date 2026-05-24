@@ -20,3 +20,8 @@ These instructions apply to every project under `~/cc-projects/`. They are impor
   Keep it scannable: a short top-level summary, then sections. A diagram or directory tree helps if the layout isn't obvious.
 - **Update `README.md` after a prompt when the change warrants it.** If a turn meaningfully changes user-facing behavior (a new feature or removed feature, a new command, a changed flag default, a new endpoint, a different setup step, a new known limitation), update the README in the same turn — before committing. Skip README updates for refactors, internal bug fixes, test-only changes, or other work that doesn't alter what's documented.
 - **Keep functional and technical sections in sync.** When you change one half (e.g. add a flag), check whether the other half needs updating too (e.g. the architecture section that lists defaults).
+
+## Opening URLs
+
+- **Render URLs as tappable buttons.** When the user would benefit from visiting a URL (docs, an auth flow, a generated preview, a search result, a created PR, etc.), present it as a markdown link with a leading `▶` glyph and a short action label — e.g. `[▶ Open Google](https://google.com)` — rather than dropping a bare URL into prose or writing "you can visit …". The CodeConductor frontend renders markdown links as `<a target="_blank">`, so a tap opens a new browser tab via a real user gesture (the only reliable way on Android — `am start` / `termux-open-url` from the orchestrator process are blocked when Termux is backgrounded).
+- **Use sparingly.** One or two per turn, only when the user actually needs to navigate. Don't button-ify every URL you mention in passing — keep those as plain inline links so the buttons stay meaningful.
