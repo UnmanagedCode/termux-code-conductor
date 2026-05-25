@@ -20,6 +20,7 @@ These instructions apply to every project under `~/cc-projects/`. They are impor
   Keep it scannable: a short top-level summary, then sections. A diagram or directory tree helps if the layout isn't obvious.
 - **Update `README.md` after a prompt when the change warrants it.** If a turn meaningfully changes user-facing behavior (a new feature or removed feature, a new command, a changed flag default, a new endpoint, a different setup step, a new known limitation), update the README in the same turn — before committing. Skip README updates for refactors, internal bug fixes, test-only changes, or other work that doesn't alter what's documented.
 - **Keep functional and technical sections in sync.** When you change one half (e.g. add a flag), check whether the other half needs updating too (e.g. the architecture section that lists defaults).
+- **Be precise and compact.** Prefer short, fact-dense sentences over narrative prose. Name exact paths, commands, flags, regexes, constants, and refusal codes when they exist — those are the load-bearing details a reader actually needs. Don't pad with rationale paragraphs unless the *why* is non-obvious; rules-of-thumb and re-explanations of what the code already shows are noise. Bullets and tables beat prose for enumerable facts (endpoints, message types, defaults). When tempted to write a paragraph, ask whether a one-line bullet plus a code snippet would carry the same information.
 
 ## Opening URLs
 
