@@ -14,6 +14,7 @@ These instructions apply to every project under `~/cc-projects/`. They are impor
 
 ## README maintenance
 
+- **Read `README.md` before interacting with a project.** You MUST read the project's `README.md` (if one exists) before doing anything that touches the project's behavior *or* its contents — running or starting scripts, binaries, servers, or services; invoking build/test commands; calling project tooling; making code/config changes; **or exploring the codebase** (reading source files, grepping, globbing, listing directories beyond the repo root). Pure git actions (`status`, `log`, `diff`, `add`, `commit`, branch inspection) are fine without it. The point is to load documented gotchas, defaults, and the project's purpose into context before you investigate or act, so exploration is framed by what the README already explains.
 - **Create a `README.md` when the project has a meaningful purpose.** If the project is more than a one-off scratchpad — i.e. it has a real reason to exist, even just for the user themselves — write a `README.md` at the project root. It must cover **both**:
   - a **functional description** (what the project does, who it's for, how to use it, the user-facing surface), and
   - a **technical description** (stack, architecture, key components, how to run / test / extend, important defaults, known limitations).
