@@ -19,6 +19,25 @@ After running the bootstrap on a clean device you have:
 - ~1.5 GB free in `$HOME`.
 - Working internet (the installer fetches the Node.js tarball + npm packages + clones the CC repo).
 
+## Install Termux
+
+The Google Play version of Termux is **frozen** and won't work. Install from one of:
+
+1. **F-Droid** (recommended) — install the [F-Droid client APK](https://f-droid.org/F-Droid.apk) from f-droid.org, then search "Termux" inside F-Droid and install. Updates flow through F-Droid.
+2. **Direct APK** (no F-Droid client needed) — download the F-Droid-signed APK directly: [com.termux_1022.apk](https://f-droid.org/repo/com.termux_1022.apk) (package page: <https://f-droid.org/packages/com.termux/>). Allow installs from your browser/file manager and sideload.
+3. **GitHub releases** — download the latest `termux-app_*.apk` for `arm64-v8a` from <https://github.com/termux/termux-app/releases> and sideload. You'll need to allow installs from your browser/file manager.
+
+After install, open Termux and run once:
+
+```bash
+pkg update -y && pkg upgrade -y
+termux-setup-storage   # optional, only if you want access to /sdcard
+```
+
+Then run the one-liner below.
+
+> **First-run gotcha.** If you pipe the one-liner straight into `bash` on a brand-new Termux session without running `pkg update` above first, Termux will trigger an interactive mirror-selection on the first `pkg install` call. The bootstrap tries to handle this automatically (it runs `pkg update -y` before installing git), but Android sometimes kills the curl|bash process group mid-mirror-test (you'll see `Process completed (signal 9) - press Enter`). If that happens, just run `pkg install -y git` manually once and re-execute the one-liner — it picks up where it left off.
+
 ## One-liner
 
 > Inspect the script first if you don't trust it: `curl -fsSL https://raw.githubusercontent.com/UnmanagedCode/termux-code-conductor/main/bootstrap.sh | less`
@@ -57,26 +76,6 @@ cd ~/cc-projects/termux-code-conductor
 | `--with-playwright` | Install termux-playwright-harness. Skips the prompt. |
 | `-y`, `--yes`, `--non-interactive` | Never prompt. Defaults to **no** harness and **does not** open the browser. |
 | `-h`, `--help` | Print the header comment and exit. |
-
-## Install Termux
-
-The Google Play version of Termux is **frozen** and won't work. Install from one of:
-
-1. **F-Droid** (recommended) — install the [F-Droid client APK](https://f-droid.org/F-Droid.apk) from f-droid.org, then search "Termux" inside F-Droid and install. Updates flow through F-Droid.
-2. **Direct APK** (no F-Droid client needed) — download the F-Droid-signed APK directly: [com.termux_1022.apk](https://f-droid.org/repo/com.termux_1022.apk) (package page: <https://f-droid.org/packages/com.termux/>). Allow installs from your browser/file manager and sideload.
-3. **GitHub releases** — download the latest `termux-app_*.apk` for `arm64-v8a` from <https://github.com/termux/termux-app/releases> and sideload. You'll need to allow installs from your browser/file manager.
-
-After install, open Termux and run once:
-
-```bash
-pkg update -y && pkg upgrade -y
-pkg install -y curl git
-termux-setup-storage   # optional, only if you want access to /sdcard
-```
-
-Then run the one-liner above.
-
-> **First-run gotcha.** If you pipe the one-liner straight into `bash` on a brand-new Termux session without running the two `pkg` commands above first, Termux will trigger an interactive mirror-selection on the first `pkg install` call. The bootstrap tries to handle this automatically (it runs `pkg update -y` before installing git), but Android sometimes kills the curl|bash process group mid-mirror-test (you'll see `Process completed (signal 9) - press Enter`). If that happens, just run `pkg install -y git` manually once and re-execute the one-liner — it picks up where it left off.
 
 ## What the bootstrap actually does
 
