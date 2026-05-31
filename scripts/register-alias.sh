@@ -29,8 +29,8 @@ fi
 cat >> "$BASHRC" <<EOF
 $MARK_START
 # Code Conductor — multi-agent orch app
-# Subcommand form:   cc start|stop|logs|update|projects
-# Shortcut aliases:  cc-start, cc-stop, cc-logs, cc-update, cc-projects
+# Subcommand form:   cc start|stop|logs|update|upgrade|projects
+# Shortcut aliases:  cc-start, cc-stop, cc-logs, cc-update, cc-upgrade, cc-projects
 cc-start() {
     ( cd "$CC_DIR" && PROJECTS_ROOT="$CC_PROJECTS_DIR" nohup npm start >server.log 2>&1 & ) \\
         && echo "Code Conductor starting at $CC_LOCAL_URL (logs: $CC_DIR/server.log)"
@@ -53,6 +53,7 @@ cc-stop() {
 }
 cc-logs() { tail -f "$CC_DIR/server.log"; }
 cc-update() { bash "$REPO/update.sh" "\$@"; }
+cc-upgrade() { bash "$REPO/update.sh" --cli "\$@"; }
 cc-projects() { cd "$CC_PROJECTS_DIR"; }
 
 # Unified dispatcher
@@ -64,13 +65,14 @@ cc() {
         stop)     cc-stop "\$@" ;;
         logs)     cc-logs "\$@" ;;
         update)   cc-update "\$@" ;;
+        upgrade)  cc-upgrade "\$@" ;;
         projects) cc-projects "\$@" ;;
         ''|-h|--help)
-            echo "Usage: cc {start|stop|logs|update|projects}"
+            echo "Usage: cc {start|stop|logs|update|upgrade|projects}"
             ;;
         *)
             echo "cc: unknown subcommand '\$sub'" >&2
-            echo "Usage: cc {start|stop|logs|update|projects}" >&2
+            echo "Usage: cc {start|stop|logs|update|upgrade|projects}" >&2
             return 2
             ;;
     esac
@@ -80,7 +82,7 @@ cc() {
 _cc_complete() {
     local cur="\${COMP_WORDS[COMP_CWORD]}"
     if [ "\$COMP_CWORD" = "1" ]; then
-        COMPREPLY=( \$(compgen -W "start stop logs update projects" -- "\$cur") )
+        COMPREPLY=( \$(compgen -W "start stop logs update upgrade projects" -- "\$cur") )
     fi
 }
 complete -F _cc_complete cc

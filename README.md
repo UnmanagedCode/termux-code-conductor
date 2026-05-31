@@ -10,7 +10,7 @@ After running the bootstrap on a clean device you have:
 - Code Conductor cloned to `~/cc-projects/code-conductor`, deps installed, server running at <http://127.0.0.1:8787>, configured to use `~/cc-projects/` as its projects root.
 - `~/cc-projects/CLAUDE.md` containing the workspace conventions (auto-imported by every project's local `CLAUDE.md` via `@../CLAUDE.md`).
 - The bootstrap repo, Code Conductor, and (optionally) the Playwright harness all tagged as the **CC-Dev** group inside the CC UI — so they group together visually, separate from your own projects.
-- A `cc` dispatcher function with tab completion, plus matching `cc-*` shortcut aliases registered in `~/.bashrc`.
+- A `cc` dispatcher function with tab completion, plus matching `cc-*` shortcut aliases (`cc-start`, `cc-stop`, `cc-logs`, `cc-update`, `cc-upgrade`, `cc-projects`) registered in `~/.bashrc`.
 
 ## Requirements
 
@@ -84,13 +84,15 @@ Why glibc-runner? Termux ships musl-style bionic libc, but Claude Code (and Node
 ```bash
 source ~/.bashrc      # only needed once, to pick up the new aliases
 
-cc start              # or: cc-start  — background-start the server
-cc logs               # or: cc-logs   — follow logs in another pane (Ctrl-C to detach)
-cc stop               # or: cc-stop   — shut it down
-cc projects           # or: cc-projects  — cd into ~/cc-projects
+cc start              # or: cc-start   — background-start the server
+cc logs               # or: cc-logs    — follow logs in another pane (Ctrl-C to detach)
+cc stop               # or: cc-stop    — shut it down
+cc update             # or: cc-update  — pull repos + reapply bootstrap steps
+cc upgrade            # or: cc-upgrade — cc update + force-upgrade Claude CLI
+cc projects           # or: cc-projects — cd into ~/cc-projects
 
 # Tab completion works on the subcommands:
-cc <TAB>              # → start  stop  logs  update  projects
+cc <TAB>              # → start  stop  logs  update  upgrade  projects
 ```
 
 Then browse to <http://127.0.0.1:8787>. The CC UI lists everything under `~/cc-projects/` and groups the bootstrap, Code Conductor, and the harness under **CC-Dev** so they don't clutter your own projects.
@@ -110,7 +112,8 @@ The harness is a library, not a server — sibling projects import directly from
 ## Updating
 
 ```bash
-cc update                   # or: cc-update   or: bash ~/cc-projects/termux-code-conductor/update.sh
+cc update                   # or: cc-update    or: bash ~/cc-projects/termux-code-conductor/update.sh
+cc upgrade                  # or: cc-upgrade   — same as `cc update --cli`
 ```
 
 `update.sh` does the right thing for every component:
@@ -124,7 +127,7 @@ cc update                   # or: cc-update   or: bash ~/cc-projects/termux-code
 
 **Flags:**
 
-- `--cli` — also force-upgrade the Claude CLI to the latest npm release (`npm i -g @anthropic-ai/claude-code@latest`). Useful when Anthropic ships a new version even though nothing in this repo changed.
+- `--cli` — also force-upgrade the Claude CLI to the latest npm release (`npm i -g @anthropic-ai/claude-code@latest`). Useful when Anthropic ships a new version even though nothing in this repo changed. `cc upgrade` is shorthand for `cc update --cli`.
 - `--no-restart` — pull and reinstall deps but don't bounce the running server.
 
 ## Uninstall
