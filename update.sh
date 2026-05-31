@@ -28,7 +28,6 @@ require_termux
 
 CC_PROJECTS_DIR="$HOME/cc-projects"
 CC_DIR="$CC_PROJECTS_DIR/code-conductor"
-HARNESS_DIR="$CC_PROJECTS_DIR/termux-playwright-harness"
 NPM="$HOME/claude-code-android/bin/npm"
 
 # ── 1. Update the bootstrap repo ─────────────────────────────────────────────
@@ -74,23 +73,28 @@ else
     warn "Code Conductor not installed yet — run ./bootstrap.sh to get it"
 fi
 
-# ── 2b. Update termux-playwright-harness (only if it's installed) ────────────
-HARNESS_PKG_CHANGED=0
-if [ -d "$HARNESS_DIR/.git" ]; then
-    log "Updating termux-playwright-harness"
-    ( cd "$HARNESS_DIR" && git fetch --quiet )
-    H_OLD="$(cd "$HARNESS_DIR" && git rev-parse HEAD)"
-    ( cd "$HARNESS_DIR" && git pull --ff-only --quiet )
-    H_NEW="$(cd "$HARNESS_DIR" && git rev-parse HEAD)"
-    if [ "$H_OLD" = "$H_NEW" ]; then
-        log "  harness already up to date at $(git -C "$HARNESS_DIR" rev-parse --short HEAD)"
+# ── 2b. Update installed optional projects (harness, code-share, …) ──────────
+# Loop over the optional-project registry (lib.sh) and update any that are
+# actually cloned. Pull + reinstall deps when package.json/lockfile changed.
+for opt in $(optional_project_names); do
+    opt_dir="$CC_PROJECTS_DIR/$opt"
+    [ -d "$opt_dir/.git" ] || continue
+    log "Updating $opt"
+    ( cd "$opt_dir" && git fetch --quiet )
+    O_OLD="$(cd "$opt_dir" && git rev-parse HEAD)"
+    ( cd "$opt_dir" && git pull --ff-only --quiet )
+    O_NEW="$(cd "$opt_dir" && git rev-parse HEAD)"
+    if [ "$O_OLD" = "$O_NEW" ]; then
+        log "  $opt already up to date at $(git -C "$opt_dir" rev-parse --short HEAD)"
     else
-        ok "  harness $(git -C "$HARNESS_DIR" rev-parse --short "$H_OLD") → $(git -C "$HARNESS_DIR" rev-parse --short "$H_NEW")"
-        if git -C "$HARNESS_DIR" diff --name-only "$H_OLD" "$H_NEW" | grep -qE '^(package\.json|package-lock\.json)$'; then
-            HARNESS_PKG_CHANGED=1
+        ok "  $opt $(git -C "$opt_dir" rev-parse --short "$O_OLD") → $(git -C "$opt_dir" rev-parse --short "$O_NEW")"
+        if [ -f "$opt_dir/package.json" ] \
+            && git -C "$opt_dir" diff --name-only "$O_OLD" "$O_NEW" | grep -qE '^(package\.json|package-lock\.json)$'; then
+            log "  $opt deps changed — running npm install"
+            ( cd "$opt_dir" && "$NPM" install --no-audit --no-fund )
         fi
     fi
-fi
+done
 
 # ── 3. Re-apply ──────────────────────────────────────────────────────────────
 # Reconcile the vendored workspace CLAUDE.md with the user's copy (silent
@@ -113,11 +117,6 @@ fi
 if [ "$CC_PKG_CHANGED" = "1" ]; then
     log "Code Conductor deps changed — running npm install"
     ( cd "$CC_DIR" && "$NPM" install --no-audit --no-fund )
-fi
-
-if [ "$HARNESS_PKG_CHANGED" = "1" ]; then
-    log "Harness deps changed — running npm install"
-    ( cd "$HARNESS_DIR" && "$NPM" install --no-audit --no-fund )
 fi
 
 if [ "$CC_CHANGED" = "1" ] && [ "$RESTART" = "1" ]; then

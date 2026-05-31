@@ -179,9 +179,10 @@ ${C_GRN}Done.${C_NC}
 $PLAYWRIGHT_LINE
 
 Aliases + dispatcher registered in ~/.bashrc:
-  cc start | stop | logs | update | projects     (tab-completes)
-  cc-start, cc-stop, cc-logs, cc-update          (direct shortcuts)
-  cc-projects                                    (cd into ~/cc-projects)
+  cc start|stop|logs|update|upgrade|install|projects   (tab-completes)
+  cc-start, cc-stop, cc-logs, cc-update, cc-upgrade    (direct shortcuts)
+  cc-install <name>                                    (install an optional project; no arg lists them)
+  cc-projects                                          (cd into ~/cc-projects)
 
 Run \`source ~/.bashrc\` (or open a new Termux session) to pick them up.
 EOF

@@ -23,6 +23,42 @@ require_termux() {
         || die "Unsupported arch $(uname -m). Only aarch64 Android is supported."
 }
 
+# ── Optional add-on projects ────────────────────────────────────────────────
+# Registry of optional projects installable on demand via `cc install <name>`.
+# Each is cloned into ~/cc-projects, tagged CC-Dev, and (if it ships a
+# package.json) npm-installed. This table is the single source of truth — the
+# installer, the updater, and the `cc install` listing all read from it.
+# One row per project, tab-separated: <canonical-name> <git-url> <description>
+optional_projects_table() {
+    printf '%s\t%s\t%s\n' \
+        code-share \
+        "https://github.com/UnmanagedCode/code-share.git" \
+        "Peer-to-peer read-only Git repo sharing over LAN/internet (web UI :9420)"
+    printf '%s\t%s\t%s\n' \
+        termux-playwright-harness \
+        "https://github.com/UnmanagedCode/termux-playwright-harness.git" \
+        "Playwright + Termux-Chromium glue for visual UI debugging from a phone"
+}
+
+# Print every optional project's canonical name, one per line.
+optional_project_names() { optional_projects_table | cut -f1; }
+
+# Map a user-given name (or short alias) to its canonical name on stdout.
+# Returns 1 if the name isn't a known optional project.
+canonical_optional_project() {
+    case "$1" in
+        code-share|codeshare|share)                   echo code-share ;;
+        playwright|harness|termux-playwright-harness)  echo termux-playwright-harness ;;
+        *) return 1 ;;
+    esac
+}
+
+# Print the git URL for a canonical optional-project name. Returns 1 if unknown.
+optional_project_url() {
+    optional_projects_table \
+        | awk -F'\t' -v n="$1" '$1==n {print $2; found=1} END {exit !found}'
+}
+
 # ── Workspace CLAUDE.md sync ────────────────────────────────────────────────
 # Reconciles the vendored cc-projects-CLAUDE.md with ~/cc-projects/CLAUDE.md.
 # We keep a "baseline" of what we last wrote, under ~/.cache/code-conductor-
