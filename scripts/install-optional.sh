@@ -78,4 +78,13 @@ if [ -f "$DIR/package.json" ]; then
     ( cd "$DIR" && npm install --no-audit --no-fund )
 fi
 
+# ── Project-specific system deps ─────────────────────────────────────────────
+if [ "$CANON" = "code-share" ]; then
+    if ! command -v cloudflared >/dev/null 2>&1; then
+        log "Installing cloudflared (tunnel dependency for code-share)"
+        pkg install -y cloudflared </dev/null
+    fi
+    ok "cloudflared at $(command -v cloudflared)"
+fi
+
 ok "$CANON ready at $DIR"
