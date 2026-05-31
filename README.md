@@ -35,17 +35,17 @@ The Google Play version of Termux is **frozen** and won't work. Install from one
 curl -fsSL https://raw.githubusercontent.com/UnmanagedCode/termux-code-conductor/main/bootstrap.sh | bash
 ```
 
-The script prompts interactively whether to also install the [Playwright harness](#optional-playwright-harness), and at the end offers to open the CC UI in your browser. Use a flag to skip both prompts:
+The script prompts interactively `[y/N]` for each [optional project](#optional-projects-cc-install) (code-share, the Playwright harness, …), and at the end offers to open the CC UI in your browser. Use flags to skip the prompts:
 
 ```bash
-# include the harness, no prompt
-curl -fsSL .../bootstrap.sh | bash -s -- --with-playwright
+# install specific optional projects, no prompt (comma-separated; aliases ok)
+curl -fsSL .../bootstrap.sh | bash -s -- --with=code-share,playwright
 
-# fully non-interactive (defaults to no harness)
+# fully non-interactive (installs no optional projects)
 curl -fsSL .../bootstrap.sh | bash -s -- -y
 ```
 
-When piped, the script clones itself to `~/cc-projects/termux-code-conductor` and re-execs. The interactive prompt reads from `/dev/tty`, so it still works even when stdin is the curl pipe.
+When piped, the script clones itself to `~/cc-projects/termux-code-conductor` and re-execs. The interactive prompts read from `/dev/tty`, so they still work even when stdin is the curl pipe.
 
 ## Manual install
 
@@ -53,29 +53,30 @@ When piped, the script clones itself to `~/cc-projects/termux-code-conductor` an
 pkg install -y git
 git clone https://github.com/UnmanagedCode/termux-code-conductor.git ~/cc-projects/termux-code-conductor
 cd ~/cc-projects/termux-code-conductor
-./bootstrap.sh                       # interactive prompt for Playwright
-./bootstrap.sh --with-playwright     # include harness, no prompt
-./bootstrap.sh -y                    # non-interactive, defaults to no harness
+./bootstrap.sh                            # interactive [y/N] per optional project
+./bootstrap.sh --with=code-share          # install code-share, no prompt
+./bootstrap.sh --with=code-share,playwright  # multiple (comma-separated; aliases ok)
+./bootstrap.sh -y                         # non-interactive, no optional projects
 ```
 
 ### Flags
 
 | Flag | Meaning |
 |---|---|
-| `--with-playwright` | Install termux-playwright-harness. Skips the prompt. |
-| `-y`, `--yes`, `--non-interactive` | Never prompt. Defaults to **no** harness and **does not** open the browser. |
+| `--with=<name,...>` | Install these optional projects (comma-separated, repeatable). Skips the prompts. Names/aliases come from the registry in `scripts/lib.sh` (e.g. `code-share`, `playwright`). |
+| `-y`, `--yes`, `--non-interactive` | Never prompt. Installs **no** optional projects (unless `--with=` is also given) and **does not** open the browser. |
 | `-h`, `--help` | Print the header comment and exit. |
 
 ## What the bootstrap actually does
 
-`bootstrap.sh` runs three (or four with Playwright) sub-scripts in order. Each is idempotent — re-running the bootstrap is safe.
+`bootstrap.sh` runs `install-claude-cli.sh`, `install-cc.sh`, then one `install-optional.sh <name>` per selected optional project, then `register-alias.sh`. Each is idempotent — re-running the bootstrap is safe.
 
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `scripts/install-claude-cli.sh` | If `~/claude-code-android/bin/claude -v` already works, skip. Otherwise run the vendored 12-step installer (`scripts/vendor/claude-install.sh`) that sets up `glibc-runner`, downloads Node 22.22.0 arm64, applies the openclaw-android `glibc-compat.js` patch, and `npm install -g @anthropic-ai/claude-code`. Appends a `PATH` block to `~/.bashrc`. |
 | 2 | `scripts/install-cc.sh` | Creates `~/cc-projects/` and drops the vendored `CLAUDE.md` there. `git clone https://github.com/UnmanagedCode/code-conductor.git ~/cc-projects/code-conductor` (or `git pull`). Registers the clone in Code Conductor's central store at `~/cc-projects/.code-conductor/projects/code-conductor/project.json` with `{"group": "CC-Dev"}`. `npm install`, then `PROJECTS_ROOT=~/cc-projects nohup npm start` in the background. Logs to `~/cc-projects/code-conductor/server.log`. Waits up to 10 s for `127.0.0.1:8787` to respond. |
-| 3* | `scripts/install-playwright.sh` | **Only with `--with-playwright`.** `pkg install -y chromium` if missing, then clone `termux-playwright-harness` into `~/cc-projects/`, tag it as `CC-Dev`, `npm install`. The harness is a sibling-imported library — there's no server to start. |
-| 3 / 4 | `scripts/register-alias.sh` | Rewrites a managed `# >>> code-conductor aliases >>>` block in `~/.bashrc` with the `cc` dispatcher function, bash completion, and `cc-start`/`cc-stop`/`cc-logs`/`cc-update`/`cc-upgrade`/`cc-install`/`cc-projects` shortcut aliases. |
+| 3…N | `scripts/install-optional.sh <name>` | **One per project selected via `--with=` or the interactive prompts.** Clone into `~/cc-projects/`, tag `CC-Dev`, `npm install` if it has a `package.json`. The harness case delegates to `install-playwright.sh` (which also `pkg install -y chromium`). See [Optional projects](#optional-projects-cc-install). |
+| last | `scripts/register-alias.sh` | Rewrites a managed `# >>> code-conductor aliases >>>` block in `~/.bashrc` with the `cc` dispatcher function, bash completion, and `cc-start`/`cc-stop`/`cc-logs`/`cc-update`/`cc-upgrade`/`cc-install`/`cc-projects` shortcut aliases. |
 
 Why glibc-runner? Termux ships musl-style bionic libc, but Claude Code (and Node) ship as glibc binaries. `glibc-runner` provides `ld-linux-aarch64.so.1` and a glibc tree so unmodified Linux/arm64 binaries run inside Termux. The vendored installer also patches Node with `glibc-compat.js` to handle a couple of Android filesystem quirks. Full background lives in [openclaw-android](https://github.com/AidanPark/openclaw-android).
 
@@ -120,7 +121,7 @@ The registry is the single source of truth in `scripts/lib.sh` (`optional_projec
 
 ## Optional: Playwright harness
 
-Pass `--with-playwright` to the bootstrap (or run `bash scripts/install-playwright.sh` after the fact) to also set up the [termux-playwright-harness](https://github.com/UnmanagedCode/termux-playwright-harness) — Playwright + Termux Chromium glue for visual UI debugging from a phone. It installs:
+Install it via `cc install playwright`, `bootstrap.sh --with=playwright`, or the interactive prompt — any of which routes to `install-playwright.sh` to set up the [termux-playwright-harness](https://github.com/UnmanagedCode/termux-playwright-harness) — Playwright + Termux Chromium glue for visual UI debugging from a phone. It installs:
 
 - Termux's `x11-repo` (where the `chromium` package lives — not the default `termux-main`), and then the `chromium` package itself (provides `chromium-browser`).
 - A clone of the harness at `~/cc-projects/termux-playwright-harness`, tagged as `CC-Dev`.
@@ -155,8 +156,8 @@ cc upgrade                  # or: cc-upgrade   — same as `cc update --cli`
 cc-stop || true
 rm -rf ~/claude-code-android
 rm -rf ~/cc-projects/code-conductor
-rm -rf ~/cc-projects/termux-playwright-harness   # only if --with-playwright was used
-rm -rf ~/cc-projects/code-share                  # only if `cc install code-share` was used
+rm -rf ~/cc-projects/termux-playwright-harness   # only if the harness was installed
+rm -rf ~/cc-projects/code-share                  # only if code-share was installed
 # Hand-edit ~/.bashrc and remove the two managed blocks:
 #   # >>> claude-code-android (PATH only) >>>  ...  # <<< ... <<<
 #   # >>> code-conductor aliases >>>           ...  # <<< ... <<<

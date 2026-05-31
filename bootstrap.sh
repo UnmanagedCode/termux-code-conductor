@@ -4,15 +4,20 @@
 #
 # Two ways to run:
 #   curl -fsSL https://raw.githubusercontent.com/UnmanagedCode/termux-code-conductor/main/bootstrap.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/UnmanagedCode/termux-code-conductor/main/bootstrap.sh | bash -s -- --with-playwright
+#   curl -fsSL https://raw.githubusercontent.com/UnmanagedCode/termux-code-conductor/main/bootstrap.sh | bash -s -- --with=code-share,playwright
 #   git clone https://github.com/UnmanagedCode/termux-code-conductor.git && cd termux-code-conductor && ./bootstrap.sh [flags]
 #
 # Flags:
-#   --with-playwright    install termux-playwright-harness (skips prompt)
+#   --with=<name,...>    install these optional projects (comma-separated;
+#                        repeatable). Skips the interactive prompt. Names come
+#                        from the registry in scripts/lib.sh, e.g. code-share,
+#                        playwright (alias for termux-playwright-harness).
 #   -y, --yes, --non-interactive
-#                        accept defaults, never prompt. Default for harness is OFF.
+#                        accept defaults, never prompt. Installs NO optional
+#                        projects unless --with= is also given.
 #
-# When no flag is given and a TTY is available, the script asks interactively.
+# With no --with= flag and a TTY available, the script asks [y/N] per optional
+# project.
 
 set -euo pipefail
 
@@ -22,14 +27,17 @@ REPO_NAME="termux-code-conductor"
 CLONE_TARGET="$HOME/cc-projects/termux-code-conductor"
 
 # ── Parse flags ─────────────────────────────────────────────────────────────
-WITH_PLAYWRIGHT=""
+# Optional-project names can't be validated yet (lib.sh is sourced only after
+# the self-bootstrap re-exec below), so just accumulate the raw --with= values.
+WITH_GIVEN=0
+WITH_RAW=""
 NON_INTERACTIVE=0
 for arg in "$@"; do
     case "$arg" in
-        --with-playwright) WITH_PLAYWRIGHT=1 ;;
+        --with=*) WITH_GIVEN=1; WITH_RAW="$WITH_RAW,${arg#--with=}" ;;
         -y|--yes|--non-interactive) NON_INTERACTIVE=1 ;;
         -h|--help)
-            sed -n '3,14p' "${BASH_SOURCE[0]:-$0}" 2>/dev/null | sed 's/^# \{0,1\}//'
+            sed -n '3,20p' "${BASH_SOURCE[0]:-$0}" 2>/dev/null | sed 's/^# \{0,1\}//'
             exit 0 ;;
         *) echo "Unknown flag: $arg" >&2; exit 1 ;;
     esac
@@ -112,22 +120,39 @@ source "$REPO/scripts/lib.sh"
 log "Code Conductor bootstrap starting from $REPO"
 require_termux
 
-# ── Resolve the Playwright choice ──────────────────────────────────────────
-if [ -z "$WITH_PLAYWRIGHT" ]; then
-    if [ "$NON_INTERACTIVE" = "1" ]; then
-        WITH_PLAYWRIGHT=0
-        log "Non-interactive — skipping Playwright harness (use --with-playwright to include it)"
-    elif [ -r /dev/tty ]; then
-        printf '\n%s[?]%s Also install the Playwright harness for visual UI debugging? [y/N] ' "$C_YEL" "$C_NC" >/dev/tty
-        read -r ans </dev/tty || ans=""
-        case "$ans" in
-            [yY]|[yY][eE][sS]) WITH_PLAYWRIGHT=1 ;;
-            *) WITH_PLAYWRIGHT=0 ;;
-        esac
-    else
-        WITH_PLAYWRIGHT=0
-        warn "No TTY available and no flag given — defaulting to no harness"
+# ── Resolve which optional projects to install ──────────────────────────────
+# Build SELECTED[] of canonical names: from --with= when given, else one [y/N]
+# prompt per registry project when interactive, else none.
+SELECTED=()
+select_optional() {            # add a canonical name (deduped) to SELECTED[]
+    local canon i
+    canon="$(canonical_optional_project "$1")" \
+        || die "Unknown optional project '$1'. Known: $(optional_project_names | tr '\n' ' ')"
+    if [ "${#SELECTED[@]}" -gt 0 ]; then
+        for i in "${SELECTED[@]}"; do [ "$i" = "$canon" ] && return 0; done
     fi
+    SELECTED+=("$canon")
+}
+
+if [ "$WITH_GIVEN" = "1" ]; then
+    IFS=',' read -ra _with_items <<< "$WITH_RAW"
+    for item in "${_with_items[@]}"; do
+        item="${item#"${item%%[![:space:]]*}"}"   # trim leading whitespace
+        item="${item%"${item##*[![:space:]]}"}"   # trim trailing whitespace
+        [ -z "$item" ] && continue
+        select_optional "$item"
+    done
+elif [ "$NON_INTERACTIVE" = "1" ]; then
+    log "Non-interactive — installing no optional projects (use --with=<name,...>)"
+elif [ -r /dev/tty ]; then
+    while IFS=$'\t' read -r _name _url _desc; do
+        printf '\n%s[?]%s Also install %s — %s? [y/N] ' \
+            "$C_YEL" "$C_NC" "$_name" "$_desc" >/dev/tty
+        read -r ans </dev/tty || ans=""
+        case "$ans" in [yY]|[yY][eE][sS]) select_optional "$_name" ;; esac
+    done < <(optional_projects_table)
+else
+    warn "No TTY available and no --with= flag — installing no optional projects"
 fi
 
 # Mark the bootstrap repo itself as part of the CC-Dev group
@@ -144,8 +169,9 @@ if [ "$REPO" = "$CLONE_TARGET" ]; then
     fi
 fi
 
-TOTAL=3
-[ "$WITH_PLAYWRIGHT" = "1" ] && TOTAL=4
+N_OPT="${#SELECTED[@]}"
+# Steps: 1 Claude CLI, 2 Code Conductor, then one per optional project, then aliases.
+TOTAL=$((3 + N_OPT))
 
 log "Step 1/$TOTAL — install Claude CLI"
 bash "$REPO/scripts/install-claude-cli.sh"
@@ -153,18 +179,23 @@ bash "$REPO/scripts/install-claude-cli.sh"
 log "Step 2/$TOTAL — clone + start Code Conductor"
 bash "$REPO/scripts/install-cc.sh"
 
-if [ "$WITH_PLAYWRIGHT" = "1" ]; then
-    log "Step 3/$TOTAL — install termux-playwright-harness"
-    bash "$REPO/scripts/install-playwright.sh"
-    log "Step 4/$TOTAL — register shell aliases"
-else
-    log "Step 3/$TOTAL — register shell aliases"
+step=3
+if [ "$N_OPT" -gt 0 ]; then
+    for opt in "${SELECTED[@]}"; do
+        log "Step $step/$TOTAL — install optional project: $opt"
+        bash "$REPO/scripts/install-optional.sh" "$opt"
+        step=$((step + 1))
+    done
 fi
+
+log "Step $step/$TOTAL — register shell aliases"
 bash "$REPO/scripts/register-alias.sh"
 
-PLAYWRIGHT_LINE=""
-if [ "$WITH_PLAYWRIGHT" = "1" ]; then
-    PLAYWRIGHT_LINE="  Playwright:     $HOME/cc-projects/termux-playwright-harness"
+OPT_BLOCK=""
+if [ "$N_OPT" -gt 0 ]; then
+    for opt in "${SELECTED[@]}"; do
+        OPT_BLOCK="${OPT_BLOCK}  Optional:       $HOME/cc-projects/$opt"$'\n'
+    done
 fi
 
 cat <<EOF
@@ -176,8 +207,7 @@ ${C_GRN}Done.${C_NC}
   Bootstrap:      $REPO
   Code Conductor: $HOME/cc-projects/code-conductor
   Projects root:  $HOME/cc-projects
-$PLAYWRIGHT_LINE
-
+${OPT_BLOCK}
 Aliases + dispatcher registered in ~/.bashrc:
   cc start|stop|logs|update|upgrade|install|projects   (tab-completes)
   cc-start, cc-stop, cc-logs, cc-update, cc-upgrade    (direct shortcuts)
