@@ -36,8 +36,11 @@ fi
 CANON="$(canonical_optional_project "$NAME")" \
     || die "Unknown optional project '$NAME'. Run 'cc install' to list available ones."
 
-# The Playwright harness needs the Termux chromium package, so it has its own
-# installer with that extra setup. Everything else uses the generic path below.
+# Projects with extra system deps get their own dedicated installers.
+# Everything else uses the generic path below.
+if [ "$CANON" = "code-share" ]; then
+    exec bash "$HERE/install-code-share.sh"
+fi
 if [ "$CANON" = "termux-playwright-harness" ]; then
     exec bash "$HERE/install-playwright.sh"
 fi
@@ -76,15 +79,6 @@ if [ -f "$DIR/package.json" ]; then
     command -v npm >/dev/null 2>&1 || die "npm not on PATH. Did the Claude CLI install step finish?"
     log "Installing $CANON deps (npm install)"
     ( cd "$DIR" && npm install --no-audit --no-fund )
-fi
-
-# ── Project-specific system deps ─────────────────────────────────────────────
-if [ "$CANON" = "code-share" ]; then
-    if ! command -v cloudflared >/dev/null 2>&1; then
-        log "Installing cloudflared (tunnel dependency for code-share)"
-        pkg install -y cloudflared </dev/null
-    fi
-    ok "cloudflared at $(command -v cloudflared)"
 fi
 
 ok "$CANON ready at $DIR"

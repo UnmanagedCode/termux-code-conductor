@@ -75,7 +75,7 @@ cd ~/cc-projects/termux-code-conductor
 |---|---|---|
 | 1 | `scripts/install-claude-cli.sh` | If `~/claude-code-android/bin/claude -v` already works, skip. Otherwise run the vendored 12-step installer (`scripts/vendor/claude-install.sh`) that sets up `glibc-runner`, downloads Node 22.22.0 arm64, applies the openclaw-android `glibc-compat.js` patch, and `npm install -g @anthropic-ai/claude-code`. Appends a `PATH` block to `~/.bashrc`. |
 | 2 | `scripts/install-cc.sh` | Creates `~/cc-projects/` and drops the vendored `CLAUDE.md` there. `git clone https://github.com/UnmanagedCode/code-conductor.git ~/cc-projects/code-conductor` (or `git pull`). Registers the clone in Code Conductor's central store at `~/cc-projects/.code-conductor/projects/code-conductor/project.json` with `{"group": "CC-Dev"}`. `npm install`, then `PROJECTS_ROOT=~/cc-projects nohup npm start` in the background. Logs to `~/cc-projects/code-conductor/server.log`. Waits up to 10 s for `127.0.0.1:8787` to respond. |
-| 3…N | `scripts/install-optional.sh <name>` | **One per project selected via `--with=` or the interactive prompts.** Clone into `~/cc-projects/`, tag `CC-Dev`, `npm install` if it has a `package.json`. The `code-share` case also `pkg install -y cloudflared`. The harness case delegates to `install-playwright.sh` (which also `pkg install -y chromium`). See [Optional projects](#optional-projects-cc-install). |
+| 3…N | `scripts/install-optional.sh <name>` | **One per project selected via `--with=` or the interactive prompts.** Clone into `~/cc-projects/`, tag `CC-Dev`, `npm install` if it has a `package.json`. Projects with extra system deps delegate to a dedicated installer: `code-share` → `install-code-share.sh` (also `pkg install -y cloudflared`); the harness → `install-playwright.sh` (also `pkg install -y chromium`). See [Optional projects](#optional-projects-cc-install). |
 | last | `scripts/register-alias.sh` | Rewrites a managed `# >>> code-conductor aliases >>>` block in `~/.bashrc` with the `cc` dispatcher function, bash completion, and `cc-start`/`cc-stop`/`cc-logs`/`cc-update`/`cc-upgrade`/`cc-install`/`cc-projects` shortcut aliases. |
 
 Why glibc-runner? Termux ships musl-style bionic libc, but Claude Code (and Node) ship as glibc binaries. `glibc-runner` provides `ld-linux-aarch64.so.1` and a glibc tree so unmodified Linux/arm64 binaries run inside Termux. The vendored installer also patches Node with `glibc-compat.js` to handle a couple of Android filesystem quirks. Full background lives in [openclaw-android](https://github.com/AidanPark/openclaw-android).
@@ -183,6 +183,7 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   ├── install-claude-cli.sh
 │   ├── install-cc.sh           # clones Code Conductor, sets group, starts server
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project
+│   ├── install-code-share.sh   # optional: clones code-share + pkg install cloudflared
 │   ├── install-playwright.sh   # optional: clones termux-playwright-harness (chromium setup)
 │   ├── register-alias.sh       # cc dispatcher + completion + cc-* aliases
 │   └── vendor/
