@@ -144,7 +144,7 @@ if [ "$WITH_GIVEN" = "1" ]; then
     done
 elif [ "$NON_INTERACTIVE" = "1" ]; then
     log "Non-interactive — installing no optional projects (use --with=<name,...>)"
-elif [ -r /dev/tty ]; then
+elif ( : </dev/tty ) 2>/dev/null; then
     while IFS=$'\t' read -r _name _url _desc; do
         printf '\n%s[?]%s Also install %s — %s? [y/N] ' \
             "$C_YEL" "$C_NC" "$_name" "$_desc" >/dev/tty
@@ -218,7 +218,7 @@ Run \`source ~/.bashrc\` (or open a new Termux session) to pick them up.
 EOF
 
 CC_LOCAL_URL="http://127.0.0.1:8787"
-if [ "$NON_INTERACTIVE" != "1" ] && [ -r /dev/tty ]; then
+if [ "$NON_INTERACTIVE" != "1" ] && ( : </dev/tty ) 2>/dev/null; then
     printf '\n%s[?]%s Open the Code Conductor UI in your browser now? [y/N] ' \
         "$C_YEL" "$C_NC" >/dev/tty
     read -r ans </dev/tty || ans=""
