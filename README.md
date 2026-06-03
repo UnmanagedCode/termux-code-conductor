@@ -8,7 +8,7 @@ After running the bootstrap on a clean device you have:
 
 - `claude` on `$PATH` — runs natively under glibc-runner on Android aarch64.
 - Code Conductor cloned to `~/cc-projects/code-conductor`, deps installed, server running at <http://127.0.0.1:8787>, configured to use `~/cc-projects/` as its projects root.
-- `~/cc-projects/CLAUDE.md` containing the workspace conventions (auto-imported by every project's local `CLAUDE.md` via `@../CLAUDE.md`).
+- `~/cc-projects/CLAUDE.md` containing the workspace conventions — created and managed by Code Conductor on first run (Settings → Workspace conventions). Auto-imported by every project's local `CLAUDE.md` via `@../CLAUDE.md`.
 - The bootstrap repo, Code Conductor, and (optionally) the Playwright harness all tagged as the **CC-Dev** group inside the CC UI — so they group together visually, separate from your own projects.
 - A `cc` dispatcher function with tab completion, plus matching `cc-*` shortcut aliases (`cc-start`, `cc-stop`, `cc-logs`, `cc-update`, `cc-upgrade`, `cc-install`, `cc-projects`) registered in `~/.bashrc`.
 
@@ -74,7 +74,7 @@ cd ~/cc-projects/termux-code-conductor
 | Step | Script | What it does |
 |---|---|---|
 | 1 | `scripts/install-claude-cli.sh` | If `~/claude-code-android/bin/claude -v` already works, skip. Otherwise run the vendored 12-step installer (`scripts/vendor/claude-install.sh`) that sets up `glibc-runner`, downloads Node 22.22.0 arm64, applies the openclaw-android `glibc-compat.js` patch, and `npm install -g @anthropic-ai/claude-code`. Appends a `PATH` block to `~/.bashrc`. |
-| 2 | `scripts/install-cc.sh` | Creates `~/cc-projects/` and drops the vendored `CLAUDE.md` there. `git clone https://github.com/UnmanagedCode/code-conductor.git ~/cc-projects/code-conductor` (or `git pull`). Registers the clone in Code Conductor's central store at `~/cc-projects/.code-conductor/projects/code-conductor/project.json` with `{"group": "CC-Dev"}`. `npm install`, then `PROJECTS_ROOT=~/cc-projects nohup npm start` in the background. Logs to `~/cc-projects/code-conductor/server.log`. Waits up to 10 s for `127.0.0.1:8787` to respond. |
+| 2 | `scripts/install-cc.sh` | Creates `~/cc-projects/`. `git clone https://github.com/UnmanagedCode/code-conductor.git ~/cc-projects/code-conductor` (or `git pull`). Registers the clone in Code Conductor's central store at `~/cc-projects/.code-conductor/projects/code-conductor/project.json` with `{"group": "CC-Dev"}`. `npm install`, then `PROJECTS_ROOT=~/cc-projects nohup npm start` in the background. Logs to `~/cc-projects/code-conductor/server.log`. Waits up to 10 s for `127.0.0.1:8787` to respond. Code Conductor creates `~/cc-projects/CLAUDE.md` on first start. |
 | 3…N | `scripts/install-optional.sh <name>` | **One per project selected via `--with=` or the interactive prompts.** Clone into `~/cc-projects/`, tag `CC-Dev`, `npm install` if it has a `package.json`. Projects with extra system deps delegate to a dedicated installer: `code-share` → `install-code-share.sh` (also `pkg install -y cloudflared`); the harness → `install-playwright.sh` (also `pkg install -y chromium`). See [Optional projects](#optional-projects-cc-install). |
 | last | `scripts/register-alias.sh` | Rewrites a managed `# >>> code-conductor aliases >>>` block in `~/.bashrc` with the `cc` dispatcher function, bash completion, and `cc-start`/`cc-stop`/`cc-logs`/`cc-update`/`cc-upgrade`/`cc-install`/`cc-projects` shortcut aliases. |
 
@@ -139,11 +139,10 @@ cc upgrade                  # or: cc-upgrade   — same as `cc update --cli`
 `update.sh` does the right thing for every component:
 
 1. `git pull --ff-only` the bootstrap repo, Code Conductor, and every installed optional project (the harness, code-share, …); prints which files changed.
-2. Reconciles `~/cc-projects/CLAUDE.md` against the vendored workspace conventions. If you haven't edited it, the new version is dropped in silently. If you *have* edited it AND upstream also changed, you're prompted with **keep / overwrite (backs yours up) / diff**. Baseline tracking lives at `~/.cache/code-conductor-bootstrap/CLAUDE.md.installed`.
-3. Re-runs `register-alias.sh` (no-op if `~/.bashrc` is already current).
-4. If CC's or any installed optional project's `package.json`/lockfile changed → `npm install` in that dir.
-5. If CC code changed and the server is running → graceful restart with `PROJECTS_ROOT=~/cc-projects`.
-6. Only re-runs the Claude CLI installer if `scripts/vendor/claude-install.sh` itself changed.
+2. Re-runs `register-alias.sh` (no-op if `~/.bashrc` is already current).
+3. If CC's or any installed optional project's `package.json`/lockfile changed → `npm install` in that dir.
+4. If CC code changed and the server is running → graceful restart with `PROJECTS_ROOT=~/cc-projects`.
+5. Only re-runs the Claude CLI installer if `scripts/vendor/claude-install.sh` itself changed.
 
 **Flags:**
 
@@ -187,8 +186,7 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   ├── install-playwright.sh   # optional: clones termux-playwright-harness (chromium setup)
 │   ├── register-alias.sh       # cc dispatcher + completion + cc-* aliases
 │   └── vendor/
-│       ├── claude-install.sh           # vendored from ~/share/claude-install.sh
-│       └── cc-projects-CLAUDE.md       # workspace conventions for ~/cc-projects/
+│       └── claude-install.sh           # vendored from ~/share/claude-install.sh
 ├── .gitignore
 ├── CLAUDE.md
 └── README.md

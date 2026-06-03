@@ -18,18 +18,6 @@ CC_LOCAL_URL="http://127.0.0.1:8787"
 
 mkdir -p "$CC_PROJECTS_DIR"
 
-# Drop the vendored workspace-conventions CLAUDE.md at the cc-projects root
-# (only if not already present — never overwrite the user's own customizations).
-if [ ! -f "$CC_PROJECTS_DIR/CLAUDE.md" ]; then
-    cp "$HERE/vendor/cc-projects-CLAUDE.md" "$CC_PROJECTS_DIR/CLAUDE.md"
-    # Record the baseline so `cc update` can later tell user edits apart
-    # from upstream changes.
-    state_dir="$HOME/.cache/code-conductor-bootstrap"
-    mkdir -p "$state_dir"
-    cp "$HERE/vendor/cc-projects-CLAUDE.md" "$state_dir/CLAUDE.md.installed"
-    ok "Installed $CC_PROJECTS_DIR/CLAUDE.md (workspace conventions)"
-fi
-
 # Clone or update Code Conductor
 if [ -d "$CC_DIR/.git" ]; then
     log "Code Conductor clone exists — fetching latest"
