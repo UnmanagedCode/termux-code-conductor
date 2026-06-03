@@ -97,12 +97,6 @@ for opt in $(optional_project_names); do
 done
 
 # ── 3. Re-apply ──────────────────────────────────────────────────────────────
-# Reconcile the vendored workspace CLAUDE.md with the user's copy (silent
-# update if untouched, prompt on three-way conflict).
-sync_workspace_claudemd \
-    "$REPO/scripts/vendor/cc-projects-CLAUDE.md" \
-    "$CC_PROJECTS_DIR/CLAUDE.md"
-
 bash "$REPO/scripts/register-alias.sh"
 
 if [ "$UPGRADE_CLI" = "1" ]; then
