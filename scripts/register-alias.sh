@@ -33,8 +33,8 @@ fi
 cat >> "$BASHRC" <<EOF
 $MARK_START
 # Code Conductor — multi-agent orch app
-# Subcommand form:   cc start|stop|logs|update|upgrade|install|projects
-# Shortcut aliases:  cc-start, cc-stop, cc-logs, cc-update, cc-upgrade, cc-install, cc-projects
+# Subcommand form:   cc start|stop|logs|update|upgrade|install|projects|widget
+# Shortcut aliases:  cc-start, cc-stop, cc-logs, cc-update, cc-upgrade, cc-install, cc-projects, cc-widget
 cc-start() {
     ( cd "$CC_DIR" && PROJECTS_ROOT="$CC_PROJECTS_DIR" nohup npm start >server.log 2>&1 & ) \\
         && echo "Code Conductor starting at $CC_LOCAL_URL (logs: $CC_DIR/server.log)"
@@ -60,6 +60,7 @@ cc-update() { bash "$REPO/update.sh" "\$@"; }
 cc-upgrade() { bash "$REPO/update.sh" --cli "\$@"; }
 cc-install() { bash "$REPO/scripts/install-optional.sh" "\$@"; }
 cc-projects() { cd "$CC_PROJECTS_DIR"; }
+cc-widget() { bash "$REPO/scripts/install-widget.sh" "\$@"; }
 
 # Unified dispatcher
 cc() {
@@ -73,12 +74,13 @@ cc() {
         upgrade)  cc-upgrade "\$@" ;;
         install)  cc-install "\$@" ;;
         projects) cc-projects "\$@" ;;
+        widget)   cc-widget "\$@" ;;
         ''|-h|--help)
-            echo "Usage: cc {start|stop|logs|update|upgrade|install|projects}"
+            echo "Usage: cc {start|stop|logs|update|upgrade|install|projects|widget}"
             ;;
         *)
             echo "cc: unknown subcommand '\$sub'" >&2
-            echo "Usage: cc {start|stop|logs|update|upgrade|install|projects}" >&2
+            echo "Usage: cc {start|stop|logs|update|upgrade|install|projects|widget}" >&2
             return 2
             ;;
     esac
@@ -89,7 +91,7 @@ cc() {
 _cc_complete() {
     local cur="\${COMP_WORDS[COMP_CWORD]}"
     if [ "\$COMP_CWORD" = "1" ]; then
-        COMPREPLY=( \$(compgen -W "start stop logs update upgrade install projects" -- "\$cur") )
+        COMPREPLY=( \$(compgen -W "start stop logs update upgrade install projects widget" -- "\$cur") )
     elif [ "\$COMP_CWORD" = "2" ] && [ "\${COMP_WORDS[1]}" = "install" ]; then
         COMPREPLY=( \$(compgen -W "$OPTIONAL_NAMES" -- "\$cur") )
     fi

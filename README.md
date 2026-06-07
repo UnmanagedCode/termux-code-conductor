@@ -76,7 +76,7 @@ cd ~/cc-projects/termux-code-conductor
 | 1 | `scripts/install-claude-cli.sh` | If `~/claude-code-android/bin/claude -v` already works, skip. Otherwise run the vendored 12-step installer (`scripts/vendor/claude-install.sh`) that sets up `glibc-runner`, downloads Node 22.22.0 arm64, applies the openclaw-android `glibc-compat.js` patch, and `npm install -g @anthropic-ai/claude-code`. Appends a `PATH` block to `~/.bashrc`. |
 | 2 | `scripts/install-cc.sh` | Creates `~/cc-projects/`. `git clone https://github.com/UnmanagedCode/code-conductor.git ~/cc-projects/code-conductor` (or `git pull`). Registers the clone in Code Conductor's central store at `~/cc-projects/.code-conductor/projects/code-conductor/project.json` with `{"group": "CC-Dev"}`. `npm install`, then `PROJECTS_ROOT=~/cc-projects nohup npm start` in the background. Logs to `~/cc-projects/code-conductor/server.log`. Waits up to 10 s for `127.0.0.1:8787` to respond. Code Conductor creates `~/cc-projects/CLAUDE.md` on first start. |
 | 3…N | `scripts/install-optional.sh <name>` | **One per project selected via `--with=` or the interactive prompts.** Clone into `~/cc-projects/`, tag `CC-Dev`, `npm install` if it has a `package.json`. Projects with extra system deps delegate to a dedicated installer: `code-share` → `install-code-share.sh` (also `pkg install -y cloudflared`); the harness → `install-playwright.sh` (also `pkg install -y chromium`). See [Optional projects](#optional-projects-cc-install). |
-| last | `scripts/register-alias.sh` | Rewrites a managed `# >>> code-conductor aliases >>>` block in `~/.bashrc` with the `cc` dispatcher function, bash completion, and `cc-start`/`cc-stop`/`cc-logs`/`cc-update`/`cc-upgrade`/`cc-install`/`cc-projects` shortcut aliases. |
+| last | `scripts/register-alias.sh` | Rewrites a managed `# >>> code-conductor aliases >>>` block in `~/.bashrc` with the `cc` dispatcher function, bash completion, and `cc-start`/`cc-stop`/`cc-logs`/`cc-update`/`cc-upgrade`/`cc-install`/`cc-projects`/`cc-widget` shortcut aliases. |
 
 Why glibc-runner? Termux ships musl-style bionic libc, but Claude Code (and Node) ship as glibc binaries. `glibc-runner` provides `ld-linux-aarch64.so.1` and a glibc tree so unmodified Linux/arm64 binaries run inside Termux. The vendored installer also patches Node with `glibc-compat.js` to handle a couple of Android filesystem quirks. Full background lives in [openclaw-android](https://github.com/AidanPark/openclaw-android).
 
@@ -92,13 +92,51 @@ cc update             # or: cc-update  — pull repos + reapply bootstrap steps
 cc upgrade            # or: cc-upgrade — cc update + force-upgrade Claude CLI
 cc install <name>     # or: cc-install — install an optional project (no arg → list)
 cc projects           # or: cc-projects — cd into ~/cc-projects
+cc widget             # or: cc-widget  — install the Termux:Widget home-screen shortcut
 
 # Tab completion works on the subcommands (and on optional-project names after `install`):
-cc <TAB>              # → start  stop  logs  update  upgrade  install  projects
+cc <TAB>              # → start  stop  logs  update  upgrade  install  projects  widget
 cc install <TAB>      # → code-share  termux-playwright-harness
 ```
 
 Then browse to <http://127.0.0.1:8787>. The CC UI lists everything under `~/cc-projects/` and groups the bootstrap, Code Conductor, and the harness under **CC-Dev** so they don't clutter your own projects.
+
+## Termux:Widget home-screen shortcut
+
+Tap a home-screen widget to start CC and open it in the system default browser — silently, with no terminal window.
+
+**Prerequisites:**
+- Install the **Termux:Widget** add-on app from F-Droid (not the Play Store):
+  [▶ Termux:Widget on F-Droid](https://f-droid.org/packages/com.termux.widget/)
+- Grant Termux the **"Display over other apps"** permission (SYSTEM_ALERT_WINDOW). Without it the server will still start on tap, but the browser will **not** open automatically (Android 10+ Background-Activity-Launch rules block foreground launches from a background task unless the app holds this permission). To grant it: **Settings → Apps → Termux → "Display over other apps"** (a.k.a. "Appear on top") → **Allow**.
+
+**Install the shortcut:**
+
+```bash
+cc widget            # or: bash ~/cc-projects/termux-code-conductor/scripts/install-widget.sh
+```
+
+This writes `~/.shortcuts/tasks/CodeConductor` (a silent background task) and installs a custom icon. Re-running is safe (idempotent). The installer removes any stale variants (`~/.shortcuts/tasks/Code Conductor.sh`, `~/.shortcuts/Code Conductor.sh`, `~/.shortcuts/Code Conductor`, `~/.shortcuts/Code_Conductor`, `~/.shortcuts/CodeConductor`) automatically. At the end, it opens the Termux:Widget "create shortcut" screen so you can immediately pin CodeConductor to your home screen.
+
+**Re-pin after upgrade:** the script moved from `~/.shortcuts/` to `~/.shortcuts/tasks/` — if you had a previous shortcut pinned you must remove it and re-pin **CodeConductor** from the widget list.
+
+**Add to home screen:** `cc widget` opens the Termux:Widget "create shortcut" screen automatically at the end of install — tap **CodeConductor** (shown with the CC icon) to pin it. Alternatively: long-press an empty area of your home screen → **Widgets** → **Termux:Widget** → tap **CodeConductor**.
+
+**What happens on tap (silent background task — no terminal):**
+1. Acquires a `termux-wake-lock` so the server survives screen-off and Termux backgrounding.
+2. Calls `cc start` — no-op if the server is already running.
+3. Waits up to 10 s for the server to be ready (instant on a warm start).
+4. Opens `http://127.0.0.1:8787` in the system default browser. Requires "Display over other apps" permission (see above) for this to work from a background task.
+5. Shows a toast (optional, requires Termux:API app).
+
+If the browser doesn't open automatically, the "Display over other apps" permission is likely missing — open `http://127.0.0.1:8787` yourself in any browser, or install a PWA from that URL.
+
+**To stop:** run `cc stop` to kill the server, then `termux-wake-unlock` to release the wake lock (or force-stop Termux from Android settings, which releases it automatically).
+
+**Technical notes:**
+- **Icon:** `assets/widget-icon.png` (192×192 PNG, rasterized from Code Conductor's own `public/icon.svg`) is copied to both `~/.shortcuts/icons/CodeConductor.png` and `~/.shortcuts/icons/tasks/CodeConductor.png` — Termux:Widget looks in either location depending on version.
+- **Browser launch:** uses `am start -a android.intent.action.VIEW` without a package constraint, so the system default browser handles the URL. `am start` calls Android's Activity Manager directly from within Termux — it does **not** require `allow-external-apps=true` in `termux.properties` (unlike `termux-open-url`). Android 10+ BAL rules normally block background tasks from foregrounding other apps, but granting Termux SYSTEM_ALERT_WINDOW ("Display over other apps") exempts it, allowing the default browser to open reliably.
+- **Toast:** `termux-toast` requires the Termux:API app (F-Droid: `com.termux.api`). It is optional — the call uses a 3-second timeout (`timeout 3 termux-toast …`) so its absence is harmless.
 
 CC's own README (full feature list, REST + WebSocket protocol, MCP wiring) lives at <https://github.com/UnmanagedCode/code-conductor/blob/main/README.md>.
 
@@ -169,12 +207,17 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 - **aarch64 only.** No 32-bit ARM, no x86 emulator support. The installer hard-fails on anything else.
 - **Localhost-only CC.** Server binds `127.0.0.1:8787` with no auth. Don't `ssh -L` it to a shared box.
 - **Background server dies on session end.** Termux kills its process tree when the app is force-stopped. Wrap the server in `tmux` or hold a `termux-wake-lock` if you want it persistent.
+- **Wake lock is not auto-released.** The Termux:Widget shortcut acquires a `termux-wake-lock` on each tap. Run `termux-wake-unlock` when you no longer need the server running in the background, or stop it via `cc stop && termux-wake-unlock`. Force-stopping Termux from Android settings releases it automatically.
+- **"Display over other apps" permission required for browser auto-open.** The shortcut runs as a silent background task (`~/.shortcuts/tasks/`), which means Android 10+ BAL rules block it from foregrounding the default browser unless Termux holds the SYSTEM_ALERT_WINDOW permission. Grant it via **Settings → Apps → Termux → "Display over other apps" (a.k.a. "Appear on top") → Allow**. Without it, the server still starts but the browser won't open automatically; navigate to `http://127.0.0.1:8787` yourself.
+- **Re-pin required after upgrade from the old shortcut.** The script moved from `~/.shortcuts/CodeConductor` to `~/.shortcuts/tasks/CodeConductor`. Any previously pinned shortcut must be removed and re-added from the widget list.
 - **First install is slow.** The 12-step installer downloads ~50 MB (Node tarball) plus the global npm install. Expect 3–10 minutes on a fresh device depending on network.
 
 ## Repo layout
 
 ```
 .
+├── assets/
+│   └── widget-icon.png         # 192×192 PNG icon, rasterized from code-conductor/public/icon.svg
 ├── bootstrap.sh            # entrypoint
 ├── update.sh               # git pull + re-apply (use `cc update`)
 ├── scripts/
@@ -184,6 +227,7 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project
 │   ├── install-code-share.sh   # optional: clones code-share + pkg install cloudflared
 │   ├── install-playwright.sh   # optional: clones termux-playwright-harness (chromium setup)
+│   ├── install-widget.sh       # Termux:Widget home-screen shortcut (cc widget)
 │   ├── register-alias.sh       # cc dispatcher + completion + cc-* aliases
 │   └── vendor/
 │       └── claude-install.sh           # vendored from ~/share/claude-install.sh
