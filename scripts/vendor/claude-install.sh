@@ -332,6 +332,8 @@ done
 if [ \$_COUNT -gt 0 ] && [ \$_COUNT -lt \$# ]; then
     while [ \$# -gt 0 ]; do
         case "\$1" in
+            --check|--eval|--print|--interactive|--input-type)
+                break ;;   # not allowed in NODE_OPTIONS — leave in \$@ for node.real
             --*) _LEADING_OPTS="\${_LEADING_OPTS:+\$_LEADING_OPTS }\$1"; shift ;;
             *) break ;;
         esac
