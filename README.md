@@ -223,26 +223,15 @@ cc upgrade                  # or: cc-upgrade   — same as `cc update --cli`
 
 ## Extending: Migrations
 
-Migrations live in `scripts/migrations/`. The filename determines the type:
+Migrations live in `scripts/migrations/`. Currently only recurring reconcilers are supported:
 
 | Filename pattern | When it runs | State recorded |
 |---|---|---|
-| `NNNN-<name>.once.sh` | Once; skipped on subsequent updates | `~/claude-code-android/.state/migrations/NNNN-<name>` |
 | `NNNN-<name>.recurring.sh` | Every update | None |
 
-Scripts are run in sort order (so numeric prefix controls ordering). Each script must be idempotent and should `source "$HERE/../lib.sh"` for `log`/`ok`/`warn`/`die`. A non-zero exit is caught by the runner: it emits `warn "Migration <name> failed — continuing"` and moves on.
+Scripts run in sort order (numeric prefix controls ordering). Each must be idempotent and should `source "$HERE/../lib.sh"` for `log`/`ok`/`warn`/`die`. A non-zero exit is caught by the runner: it emits a warning and moves on — a failing migration never aborts the update. Any file with a different suffix (e.g. a future `.once.sh`) triggers a visible "not supported yet" warning and is skipped; one-time migration support will be added when a genuine one-time migration is first needed.
 
-**One-time skeleton** (`scripts/migrations/0002-example.once.sh`):
-```bash
-#!/data/data/com.termux/files/usr/bin/bash
-set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$HERE/../lib.sh"
-# idempotent work here — runs once, then state file is touched by the runner
-log "applying one-time migration"
-```
-
-**Recurring skeleton** (`scripts/migrations/0003-example.recurring.sh`):
+**Recurring skeleton** (`scripts/migrations/0002-example.recurring.sh`):
 ```bash
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
