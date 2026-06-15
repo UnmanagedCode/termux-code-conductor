@@ -60,6 +60,11 @@ patch_wrapper() {
         }
         { print }
     ' "$WRAPPER" > "$tmp"
+    # Verify the insertion actually landed before committing the rewrite.
+    if ! grep -qF "$MARKER_START" "$tmp"; then
+        rm -f "$tmp"
+        die "Anchor line 'unset LD_PRELOAD' not found in wrapper — cannot patch (wrapper format may have changed). Wrapper left unmodified."
+    fi
     mv "$tmp" "$WRAPPER"
     chmod 755 "$WRAPPER"
     ok "Patched claude wrapper at $WRAPPER"
