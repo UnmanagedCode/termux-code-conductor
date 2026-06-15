@@ -137,4 +137,17 @@ if [ "$CC_CHANGED" = "1" ] && [ "$RESTART" = "1" ]; then
     fi
 fi
 
+# If dns-doh is installed but its wrapper patch is gone (can happen after a
+# full Claude CLI reinstall regenerates ~/claude-code-android/bin/claude), silently
+# re-apply. Fast no-op when the patch is already present.
+# Note: write_wrappers() only fires during a full install (install-claude-cli.sh
+# exits early when claude -v works); cc upgrade only npm-upgrades the package.
+_DOH_SO="$HOME/claude-code-android/dns-doh/dohshim.so"
+_CLAUDE_WRAPPER="$HOME/claude-code-android/bin/claude"
+if [ -f "$_DOH_SO" ] && [ -f "$_CLAUDE_WRAPPER" ] && \
+   ! grep -qF '# >>> dns-doh shim >>>' "$_CLAUDE_WRAPPER"; then
+    log "dns-doh installed but wrapper patch missing — re-applying"
+    bash "$REPO/scripts/install-dns-doh.sh" --patch-only
+fi
+
 ok "Update complete."

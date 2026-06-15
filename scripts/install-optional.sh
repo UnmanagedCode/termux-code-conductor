@@ -22,7 +22,8 @@ if [ -z "$NAME" ] || [ "$NAME" = "-h" ] || [ "$NAME" = "--help" ]; then
     echo "Optional projects (install with: cc install <name>)"
     echo
     optional_projects_table | while IFS=$'\t' read -r name url desc; do
-        if [ -d "$CC_PROJECTS_DIR/$name/.git" ]; then
+        if [ -d "$CC_PROJECTS_DIR/$name/.git" ] || \
+           ([ "$name" = "dns-doh" ] && [ -f "$HOME/claude-code-android/dns-doh/dohshim.so" ]); then
             mark="${C_GRN}[installed]${C_NC}"
         else
             mark="           "
@@ -43,6 +44,9 @@ if [ "$CANON" = "code-share" ]; then
 fi
 if [ "$CANON" = "termux-playwright-harness" ]; then
     exec bash "$HERE/install-playwright.sh"
+fi
+if [ "$CANON" = "dns-doh" ]; then
+    exec bash "$HERE/install-dns-doh.sh" "${@:2}"
 fi
 
 URL="$(optional_project_url "$CANON")" || die "No git URL registered for '$CANON'"
