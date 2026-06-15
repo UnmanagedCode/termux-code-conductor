@@ -292,6 +292,7 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   ├── lib.sh              # shared logging + Termux guard
 │   ├── run-migrations.sh       # generic migrations runner (called by update.sh)
 │   ├── migrations/
+│   │   ├── 0000-node-check-fix.recurring.sh  # ensure node wrapper exempts --check/--eval/… from NODE_OPTIONS hoisting
 │   │   └── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh wrapper patch if missing
 │   ├── install-claude-cli.sh
 │   ├── install-cc.sh           # clones Code Conductor, sets group, starts server
