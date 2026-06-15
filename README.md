@@ -282,7 +282,8 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   ├── run-migrations.sh       # generic migrations runner (called by update.sh)
 │   ├── migrations/
 │   │   ├── 0000-node-check-fix.recurring.sh  # ensure node wrapper exempts --check/--eval/… from NODE_OPTIONS hoisting
-│   │   └── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh wrapper patch if missing
+│   │   ├── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh wrapper patch if missing
+│   │   └── 0002-node-test-flag.recurring.sh  # ensure node wrapper exempts --test from NODE_OPTIONS hoisting
 │   ├── install-claude-cli.sh
 │   ├── install-cc.sh           # clones Code Conductor, sets group, starts server
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project
