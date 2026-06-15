@@ -96,7 +96,7 @@ cc widget             # or: cc-widget  — install the Termux:Widget home-screen
 
 # Tab completion works on the subcommands (and on optional-project names after `install`):
 cc <TAB>              # → start  stop  logs  update  upgrade  install  projects  widget
-cc install <TAB>      # → code-share  termux-playwright-harness
+cc install <TAB>      # → code-share  termux-playwright-harness  dns-doh
 ```
 
 Then browse to <http://127.0.0.1:8787>. The CC UI lists everything under `~/cc-projects/` and groups the bootstrap, Code Conductor, and the harness under **CC-Dev** so they don't clutter your own projects.
@@ -148,11 +148,13 @@ Add-on projects that aren't part of the core install. `cc install <name>` clones
 |---|---|
 | `code-share` | [code-share](https://github.com/UnmanagedCode/code-share) — peer-to-peer **read-only** Git repo sharing over LAN/internet. Each party serves repos read-only and pulls from peers; no pushes. Git server on `:9419` (tunnelable via cloudflared), web UI on `:9420` (localhost only). Run it with `node bin/code-share.js serve` from `~/cc-projects/code-share`. |
 | `termux-playwright-harness` | The Playwright harness (see below). Aliased as `playwright`/`harness`. Routed through the dedicated installer because it also needs the Termux `chromium` package. |
+| `dns-doh` | DNS-over-HTTPS fallback for Claude Code on captive/hotel networks that block external port 53. Compiles a small C `LD_PRELOAD` shim from source at install time and patches the `claude` wrapper. Aliased as `doh`. See [DNS fix for captive networks](#dns-fix-for-captive-networks-cc-install-dns-doh). |
 
 ```bash
 cc install                 # list available optional projects + install status
 cc install code-share      # clone + npm install code-share
 cc install playwright      # alias → termux-playwright-harness (full chromium setup)
+cc install dns-doh         # compile + install the DoH DNS shim (alias: doh)
 ```
 
 The registry is the single source of truth in `scripts/lib.sh` (`optional_projects_table`); `cc install`, tab completion, and `update.sh` all read from it, so `cc update` also `git pull`s every installed optional project.
@@ -166,6 +168,36 @@ Install it via `cc install playwright`, `bootstrap.sh --with=playwright`, or the
 - Its npm deps (`playwright-core` only — the harness points `executablePath` at the system Chromium, which sidesteps Playwright's normal Chromium auto-download that doesn't ship arm64-Android builds).
 
 The harness is a library, not a server — sibling projects import directly from `~/cc-projects/termux-playwright-harness/browser.mjs`. Nothing starts in the background. `cc update` will `git pull` it too, but only if you've actually installed it.
+
+## DNS fix for captive networks (`cc install dns-doh`)
+
+Claude Code resolves DNS through glibc → hardcoded 8.8.8.8/8.8.4.4. Hotel/captive Wi-Fi networks that block external port 53 cause every API call to fail with `EAI_AGAIN` / "FailedToOpenSocket", even though HTTPS/443 works fine. This feature fixes it.
+
+```bash
+cc install dns-doh      # compile + install (alias: cc install doh)
+```
+
+**What it installs:**
+
+- Compiles `scripts/dns-doh/dohshim.c` into `~/claude-code-android/dns-doh/dohshim.so` using `clang` (installed automatically as a build dep for this feature only — not part of the default install).
+- Patches the `claude` wrapper (`~/claude-code-android/bin/claude`) to `LD_PRELOAD` the shim into Claude's glibc process. The patch is idempotent and guarded: `[ -f "$_DOH_SHIM" ] && export LD_PRELOAD=...` — harmless if the shim is absent.
+
+**How it works:** the shim intercepts `getaddrinfo()`. Fast path: tries the system resolver first — zero overhead on healthy networks. On failure, falls back to `curl https://1.1.1.1/dns-query` (port 443), synthesizes a glibc-compatible `addrinfo` chain, and returns it. Cloudflare's DoH endpoint is used; `curl` is Termux's bionic binary (uses Android's own resolver, bypasses the blocked port 53).
+
+**Validate:**
+
+```bash
+CLAUDE_DOH_FORCE=1 claude --version   # forces DoH-only; proves DoH resolution works
+```
+
+**Uninstall:**
+
+```bash
+cc install dns-doh --uninstall        # removes .so + wrapper patch
+# pkg remove clang                    # optional: remove clang if no longer needed
+```
+
+**Wrapper re-generation:** the `claude` wrapper is only regenerated during a full fresh Claude CLI install. `cc upgrade` (`npm install -g @latest`) does **not** touch the wrapper. `cc update` automatically re-applies the patch if it detects the shim is present but the patch is missing. After a manual wipe (`rm -rf ~/claude-code-android`) and reinstall, re-run `cc install dns-doh`.
 
 ## Updating
 
@@ -195,6 +227,7 @@ rm -rf ~/claude-code-android
 rm -rf ~/cc-projects/code-conductor
 rm -rf ~/cc-projects/termux-playwright-harness   # only if the harness was installed
 rm -rf ~/cc-projects/code-share                  # only if code-share was installed
+cc install dns-doh --uninstall                   # only if dns-doh was installed
 # Hand-edit ~/.bashrc and remove the two managed blocks:
 #   # >>> claude-code-android (PATH only) >>>  ...  # <<< ... <<<
 #   # >>> code-conductor aliases >>>           ...  # <<< ... <<<
@@ -211,6 +244,7 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 - **"Display over other apps" permission required for browser auto-open.** The shortcut runs as a silent background task (`~/.shortcuts/tasks/`), which means Android 10+ BAL rules block it from foregrounding the default browser unless Termux holds the SYSTEM_ALERT_WINDOW permission. Grant it via **Settings → Apps → Termux → "Display over other apps" (a.k.a. "Appear on top") → Allow**. Without it, the server still starts but the browser won't open automatically; navigate to `http://127.0.0.1:8787` yourself.
 - **Re-pin required after upgrade from the old shortcut.** The script moved from `~/.shortcuts/CodeConductor` to `~/.shortcuts/tasks/CodeConductor`. Any previously pinned shortcut must be removed and re-added from the widget list.
 - **First install is slow.** The 12-step installer downloads ~50 MB (Node tarball) plus the global npm install. Expect 3–10 minutes on a fresh device depending on network.
+- **Captive/hotel Wi-Fi blocks DNS.** Claude Code resolves via glibc → hardcoded 8.8.8.8/8.8.4.4. Networks that block external port 53 cause `EAI_AGAIN` / "FailedToOpenSocket" on every API call, even when HTTPS works. Fix: `cc install dns-doh`.
 
 ## Repo layout
 
@@ -227,6 +261,9 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project
 │   ├── install-code-share.sh   # optional: clones code-share + pkg install cloudflared
 │   ├── install-playwright.sh   # optional: clones termux-playwright-harness (chromium setup)
+│   ├── install-dns-doh.sh      # optional: compile + install DoH DNS shim for Claude
+│   ├── dns-doh/
+│   │   └── dohshim.c           # LD_PRELOAD getaddrinfo() interposer source (compiled at install)
 │   ├── install-widget.sh       # Termux:Widget home-screen shortcut (cc widget)
 │   ├── register-alias.sh       # cc dispatcher + completion + cc-* aliases
 │   └── vendor/

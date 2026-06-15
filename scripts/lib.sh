@@ -38,6 +38,10 @@ optional_projects_table() {
         termux-playwright-harness \
         "https://github.com/UnmanagedCode/termux-playwright-harness.git" \
         "Playwright + Termux-Chromium glue for visual UI debugging from a phone"
+    printf '%s\t%s\t%s\n' \
+        dns-doh \
+        "" \
+        "DNS-over-HTTPS fallback for Claude on captive/hotel networks (LD_PRELOAD shim)"
 }
 
 # Print every optional project's canonical name, one per line.
@@ -49,6 +53,7 @@ canonical_optional_project() {
     case "$1" in
         code-share|codeshare|share)                   echo code-share ;;
         playwright|harness|termux-playwright-harness)  echo termux-playwright-harness ;;
+        dns-doh|doh-dns|doh)                           echo dns-doh ;;
         *) return 1 ;;
     esac
 }
