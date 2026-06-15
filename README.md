@@ -219,6 +219,40 @@ cc upgrade                  # or: cc-upgrade   — same as `cc update --cli`
 - `--cli` — also force-upgrade the Claude CLI to the latest npm release (`npm i -g @anthropic-ai/claude-code@latest`). Useful when Anthropic ships a new version even though nothing in this repo changed. `cc upgrade` is shorthand for `cc update --cli`.
 - `--no-restart` — pull and reinstall deps but don't bounce the running server.
 
+`update.sh` also runs `scripts/run-migrations.sh` at the end of every update. Recurring reconcilers (e.g. re-applying the dns-doh wrapper patch if a fresh Claude CLI install wiped it) always run. One-time migrations run once and record completion in `~/claude-code-android/.state/migrations/`. A failing migration emits a warning but never aborts the update.
+
+## Extending: Migrations
+
+Migrations live in `scripts/migrations/`. The filename determines the type:
+
+| Filename pattern | When it runs | State recorded |
+|---|---|---|
+| `NNNN-<name>.once.sh` | Once; skipped on subsequent updates | `~/claude-code-android/.state/migrations/NNNN-<name>` |
+| `NNNN-<name>.recurring.sh` | Every update | None |
+
+Scripts are run in sort order (so numeric prefix controls ordering). Each script must be idempotent and should `source "$HERE/../lib.sh"` for `log`/`ok`/`warn`/`die`. A non-zero exit is caught by the runner: it emits `warn "Migration <name> failed — continuing"` and moves on.
+
+**One-time skeleton** (`scripts/migrations/0002-example.once.sh`):
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/../lib.sh"
+# idempotent work here — runs once, then state file is touched by the runner
+log "applying one-time migration"
+```
+
+**Recurring skeleton** (`scripts/migrations/0003-example.recurring.sh`):
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$HERE/../lib.sh"
+# fast guard: exit 0 when nothing to do
+some_condition && exit 0
+log "reconciling state"
+```
+
 ## Uninstall
 
 ```bash
@@ -256,6 +290,9 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 ├── update.sh               # git pull + re-apply (use `cc update`)
 ├── scripts/
 │   ├── lib.sh              # shared logging + Termux guard
+│   ├── run-migrations.sh       # generic migrations runner (called by update.sh)
+│   ├── migrations/
+│   │   └── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh wrapper patch if missing
 │   ├── install-claude-cli.sh
 │   ├── install-cc.sh           # clones Code Conductor, sets group, starts server
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project
