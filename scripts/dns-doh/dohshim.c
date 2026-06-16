@@ -84,24 +84,49 @@ typedef int (*gai_t)(const char *, const char *, const struct addrinfo *, struct
 
 static int atoi_simple(const char *);
 
+typedef int (*execve_t)(const char *, char *const[], char *const[]);
+typedef int (*execvpe_t)(const char *, char *const[], char *const[]);
+typedef int (*spawn_t)(pid_t *, const char *, const void *, const void *,
+                       char *const[], char *const[]);
+
 static gai_t real_gai = 0;
 static char **clean_env = 0;      /* environ minus LD_PRELOAD */
 static volatile int prefer_doh = 0;
+static execve_t  real_execve  = 0;
+static execvpe_t real_execvpe = 0;
+static spawn_t   real_spawn   = 0;
+static spawn_t   real_spawnp  = 0;
+
+/* Return a copy of envp with every LD_PRELOAD= entry removed. This is what stops
+ * the shim from propagating into exec'd children: a Bionic binary (e.g. ssh
+ * resolving github.com) that inherited LD_PRELOAD would load this glibc shim and
+ * read a glibc-layout addrinfo in the wrong field order -> SIGSEGV. Returns envp
+ * unchanged when there's nothing to strip or on malloc failure (exec beats
+ * abort); NULL stays NULL to preserve execve/posix_spawn empty-env semantics.
+ * The tiny array leak per call is irrelevant — the image is replaced on success. */
+static char **strip_preload(char *const envp[]) {
+    if (!envp) return (char **)envp;
+    int n = 0, has = 0;
+    while (envp[n]) {
+        if (strncmp(envp[n], "LD_PRELOAD=", 11) == 0) has = 1;
+        n++;
+    }
+    if (!has) return (char **)envp;
+    char **e = (char **)malloc(sizeof(char *) * (n + 1));
+    if (!e) return (char **)envp;
+    int j = 0;
+    for (int i = 0; i < n; i++) {
+        if (strncmp(envp[i], "LD_PRELOAD=", 11) == 0) continue;
+        e[j++] = envp[i];
+    }
+    e[j] = 0;
+    return e;
+}
 
 /* Build an env copy without LD_PRELOAD so the spawned bionic curl never tries
  * to load this glibc shim (which would recurse: curl->getaddrinfo->curl...). */
 static void build_clean_env(void) {
-    int n = 0;
-    while (environ[n]) n++;
-    char **e = (char **)malloc(sizeof(char *) * (n + 1));
-    if (!e) return;
-    int j = 0;
-    for (int i = 0; i < n; i++) {
-        if (strncmp(environ[i], "LD_PRELOAD=", 11) == 0) continue;
-        e[j++] = environ[i];
-    }
-    e[j] = 0;
-    clean_env = e;
+    clean_env = strip_preload(environ);
 }
 
 /* Run curl for a DoH JSON query; capture body into out. Returns bytes read. */
@@ -262,6 +287,43 @@ int getaddrinfo(const char *node, const char *service,
     /* DoH failed too — last resort: whatever the real resolver says. */
     if (real_gai) return real_gai(node, service, hints, res);
     return -2; /* EAI_NONAME */
+}
+
+/* ---- exec-family interposers ----------------------------------------------
+ * LD_PRELOAD is inherited by every exec'd child, which force-loads this glibc
+ * shim into Bionic Termux binaries (ssh, git) and crashes them. Strip
+ * LD_PRELOAD from the child's environment on the way out. Glibc children
+ * (claude/node) self-correct: their wrappers unset LD_PRELOAD and the claude
+ * wrapper re-sets the shim. Covers the real spawners — bash uses execve,
+ * Bun/claude.exe uses posix_spawn. The variadic execl* family is not
+ * intercepted (glibc's execl* call execve directly, bypassing our execv*); it
+ * is not on the crash path. */
+int execve(const char *path, char *const argv[], char *const envp[]) {
+    if (!real_execve) real_execve = (execve_t)dlsym(RTLD_NEXT, "execve");
+    return real_execve(path, argv, strip_preload(envp));
+}
+int execvpe(const char *file, char *const argv[], char *const envp[]) {
+    if (!real_execvpe) real_execvpe = (execvpe_t)dlsym(RTLD_NEXT, "execvpe");
+    return real_execvpe(file, argv, strip_preload(envp));
+}
+int execv(const char *path, char *const argv[]) {
+    if (!real_execve) real_execve = (execve_t)dlsym(RTLD_NEXT, "execve");
+    return real_execve(path, argv, strip_preload(environ));
+}
+int execvp(const char *file, char *const argv[]) {
+    /* delegate to the real execvpe so glibc's $PATH search is preserved */
+    if (!real_execvpe) real_execvpe = (execvpe_t)dlsym(RTLD_NEXT, "execvpe");
+    return real_execvpe(file, argv, strip_preload(environ));
+}
+int posix_spawn(pid_t *pid, const char *path, const void *file_actions,
+                const void *attrp, char *const argv[], char *const envp[]) {
+    if (!real_spawn) real_spawn = (spawn_t)dlsym(RTLD_NEXT, "posix_spawn");
+    return real_spawn(pid, path, file_actions, attrp, argv, strip_preload(envp));
+}
+int posix_spawnp(pid_t *pid, const char *file, const void *file_actions,
+                 const void *attrp, char *const argv[], char *const envp[]) {
+    if (!real_spawnp) real_spawnp = (spawn_t)dlsym(RTLD_NEXT, "posix_spawnp");
+    return real_spawnp(pid, file, file_actions, attrp, argv, strip_preload(envp));
 }
 
 /* tiny atoi for a digits-only string */

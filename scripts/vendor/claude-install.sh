@@ -307,7 +307,6 @@ write_wrappers() {
 export RES_OPTIONS="\${RES_OPTIONS:-use-vc}"
 
 # bionic libtermux-exec.so must not be loaded into the glibc process.
-[ -n "\${LD_PRELOAD:-}" ] && export _OA_ORIG_LD_PRELOAD="\$LD_PRELOAD"
 unset LD_PRELOAD
 
 # Let glibc-compat.js patch process.execPath back to this wrapper.
@@ -363,7 +362,6 @@ NPX_WRAPPER
 export RES_OPTIONS="\${RES_OPTIONS:-use-vc}"
 
 # bionic libtermux-exec.so must not be loaded into the glibc process.
-[ -n "\${LD_PRELOAD:-}" ] && export _OA_ORIG_LD_PRELOAD="\$LD_PRELOAD"
 unset LD_PRELOAD
 
 exec "$GLIBC_LDSO" --library-path "$GLIBC_LIBDIR" \\
