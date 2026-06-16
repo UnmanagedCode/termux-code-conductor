@@ -171,7 +171,7 @@ The harness is a library, not a server — sibling projects import directly from
 
 ## DNS fix for captive networks (`cc install dns-doh`)
 
-Claude Code resolves DNS through glibc → hardcoded 8.8.8.8/8.8.4.4. Hotel/captive Wi-Fi networks that block external port 53 cause every API call to fail with `EAI_AGAIN` / "FailedToOpenSocket", even though HTTPS/443 works fine. This feature fixes it.
+Claude Code **and Node** resolve DNS through glibc → hardcoded 8.8.8.8/8.8.4.4. Hotel/captive Wi-Fi networks that block external port 53 cause every API call to fail with `EAI_AGAIN` / "FailedToOpenSocket", even though HTTPS/443 works fine. This hits both the `claude` binary and `node.real` (npm, node, the code-conductor server's `fetch()`/`dns.lookup`). This feature fixes both. Termux's own bionic libc is **not** affected — it resolves via Android's system resolver; only the glibc binaries are broken, which is exactly what the shim targets.
 
 ```bash
 cc install dns-doh      # compile + install (alias: cc install doh)
@@ -180,24 +180,27 @@ cc install dns-doh      # compile + install (alias: cc install doh)
 **What it installs:**
 
 - Compiles `scripts/dns-doh/dohshim.c` into `~/claude-code-android/dns-doh/dohshim.so` using `clang` (installed automatically as a build dep for this feature only — not part of the default install).
-- Patches the `claude` wrapper (`~/claude-code-android/bin/claude`) to `LD_PRELOAD` the shim into Claude's glibc process. The patch is idempotent and guarded: `[ -f "$_DOH_SHIM" ] && export LD_PRELOAD=...` — harmless if the shim is absent.
+- Patches **both** the `claude` wrapper (`~/claude-code-android/bin/claude`) **and** the `node` wrapper (`~/claude-code-android/bin/node`) to `LD_PRELOAD` the shim into their glibc process. `npm`/`npx` `exec` the `node` wrapper, so they inherit the fix automatically. Each patch is idempotent and guarded: `[ -f "$_DOH_SHIM" ] && export LD_PRELOAD=...` — harmless if the shim is absent. Before first patch, each wrapper is backed up to `<wrapper>.pre-dns-doh.bak`.
 
-**How it works:** the shim intercepts `getaddrinfo()`. Fast path: tries the system resolver first — zero overhead on healthy networks. On failure, falls back to `curl https://1.1.1.1/dns-query` (port 443), synthesizes a glibc-compatible `addrinfo` chain, and returns it. Cloudflare's DoH endpoint is used; `curl` is Termux's bionic binary (uses Android's own resolver, bypasses the blocked port 53).
+**Why only the glibc shim:** both wrappers `unset LD_PRELOAD` first because Termux's inherited `LD_PRELOAD` points at bionic `libtermux-exec.so`, whose `getaddrinfo()` returns a *bionic*-ABI `struct addrinfo` (different field order) that would crash a glibc consumer. `dohshim.so` is compiled against the glibc `addrinfo` layout, so re-exporting **only** it into `node.real`/`claude.exe` (both glibc binaries) is correct. bionic `libtermux-exec.so` is never re-introduced.
+
+**How it works:** the shim intercepts `getaddrinfo()`. Fast path: tries the system resolver first — zero overhead on healthy networks. On failure, falls back to `curl https://1.1.1.1/dns-query` (port 443), synthesizes a glibc-compatible `addrinfo` chain, and returns it. Cloudflare's DoH endpoint is used; `curl` is Termux's bionic binary (uses Android's own resolver, bypasses the blocked port 53). The shim's `execve`/`posix_spawn` interposers strip `LD_PRELOAD` from spawned children, so bionic children (git-over-ssh, etc.) never inherit the glibc shim and crash.
 
 **Validate:**
 
 ```bash
-CLAUDE_DOH_FORCE=1 claude --version   # forces DoH-only; proves DoH resolution works
+CLAUDE_DOH_FORCE=1 claude --version                          # forces DoH-only; proves claude DoH works
+node -e "require('dns').lookup('api.anthropic.com',console.log)"   # node DNS resolves (no EAI_AGAIN)
 ```
 
 **Uninstall:**
 
 ```bash
-cc install dns-doh --uninstall        # removes .so + wrapper patch
+cc install dns-doh --uninstall        # removes .so + both wrapper patches + .pre-dns-doh.bak backups
 # pkg remove clang                    # optional: remove clang if no longer needed
 ```
 
-**Wrapper re-generation:** the `claude` wrapper is only regenerated during a full fresh Claude CLI install. `cc upgrade` (`npm install -g @latest`) does **not** touch the wrapper. `cc update` automatically re-applies the patch if it detects the shim is present but the patch is missing. After a manual wipe (`rm -rf ~/claude-code-android`) and reinstall, re-run `cc install dns-doh`.
+**Wrapper re-generation:** the `claude` and `node` wrappers are only regenerated during a full fresh Claude CLI install. `cc upgrade` (`npm install -g @latest`) does **not** touch them. `cc update` automatically re-applies the patch to either wrapper if it detects the shim is present but that wrapper's block is missing (recurring migrations `0001` for claude, `0003` for node). After a manual wipe (`rm -rf ~/claude-code-android`) and reinstall, re-run `cc install dns-doh`.
 
 ## Updating
 
@@ -282,8 +285,9 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   ├── run-migrations.sh       # generic migrations runner (called by update.sh)
 │   ├── migrations/
 │   │   ├── 0000-node-check-fix.recurring.sh  # ensure node wrapper exempts --check/--eval/… from NODE_OPTIONS hoisting
-│   │   ├── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh wrapper patch if missing
-│   │   └── 0002-node-test-flag.recurring.sh  # ensure node wrapper exempts --test from NODE_OPTIONS hoisting
+│   │   ├── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh claude wrapper patch if missing
+│   │   ├── 0002-node-test-flag.recurring.sh  # ensure node wrapper exempts --test from NODE_OPTIONS hoisting
+│   │   └── 0003-dns-doh-node-patch.recurring.sh # re-apply dns-doh node wrapper patch if missing
 │   ├── install-claude-cli.sh
 │   ├── install-cc.sh           # clones Code Conductor, sets group, starts server
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project

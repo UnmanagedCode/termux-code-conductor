@@ -1,16 +1,27 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Install, patch, or remove the dns-doh DNS-over-HTTPS fallback for Claude Code.
+# Install, patch, or remove the dns-doh DNS-over-HTTPS fallback for Claude Code
+# and Node.
 #
 # A C LD_PRELOAD shim intercepts getaddrinfo() and falls back to DoH via curl
 # on port 443 (Cloudflare 1.1.1.1) when the system resolver fails. Zero overhead
 # on healthy networks (fast path tries the system resolver first).
 #
+# struct-ABI note: both the claude wrapper (Bun claude.exe) and the node wrapper
+# (node.real) launch *glibc* binaries via glibc-runner's ld.so. The wrappers
+# `unset LD_PRELOAD` precisely because Termux's inherited LD_PRELOAD points at
+# the *bionic* libtermux-exec.so, whose getaddrinfo would return a bionic-ABI
+# `struct addrinfo` (different field order) into a glibc consumer → crash. Our
+# dohshim.so is compiled against the glibc addrinfo layout, so re-exporting ONLY
+# dohshim.so into either glibc process is correct for both. We must never
+# re-introduce libtermux-exec.so here. (dohshim.c documents the glibc layout.)
+#
 # Wrapper-regeneration note: write_wrappers() in vendor/claude-install.sh only
 # fires during a full fresh Claude CLI install (install-claude-cli.sh exits early
-# if claude -v works). cc upgrade only npm-upgrades the package and does NOT
-# regenerate the wrapper. The auto-heal hook in update.sh covers the rare case
-# where INSTALLER_CHANGED forces a full reinstall; for a manual wipe + reinstall
-# of ~/claude-code-android, re-run: cc install dns-doh
+# if claude -v works). It regenerates BOTH bin/claude and bin/node, wiping any
+# patch. cc upgrade only npm-upgrades the package and does NOT regenerate the
+# wrappers. The recurring migrations (0001 claude, 0003 node) re-apply the patch
+# after any regeneration; for a manual wipe + reinstall of ~/claude-code-android,
+# re-run: cc install dns-doh
 #
 # Usage:
 #   install-dns-doh.sh              # full install (compile + patch wrapper)
@@ -34,18 +45,36 @@ SHIM_SRC="$HERE/dns-doh/dohshim.c"
 SHIM_DIR="$HOME/claude-code-android/dns-doh"
 SHIM_SO="$SHIM_DIR/dohshim.so"
 WRAPPER="$HOME/claude-code-android/bin/claude"
+NODE_WRAPPER="$HOME/claude-code-android/bin/node"
 
 MARKER_START='# >>> dns-doh shim >>>'
 MARKER_END='# <<< dns-doh shim <<<'
 
 # ── Wrapper helpers ───────────────────────────────────────────────────────────
+# Both helpers take the wrapper path as $1. The marker block re-exports ONLY the
+# glibc dohshim.so (never bionic libtermux-exec.so), anchored to the wrapper's
+# own `unset LD_PRELOAD` line — identical for the claude and node wrappers.
+
+# Make a one-time pristine backup before the first patch (idempotent: never
+# overwrites an existing backup, so an already-patched wrapper can't clobber the
+# clean original). Enables a file-restore rollback alongside --uninstall.
+backup_wrapper() {
+    local wrapper="$1" label="$2"
+    [ -f "$wrapper" ] || return 0
+    if [ ! -e "$wrapper.pre-dns-doh.bak" ]; then
+        cp "$wrapper" "$wrapper.pre-dns-doh.bak"
+        ok "Backed up $label wrapper → $wrapper.pre-dns-doh.bak"
+    fi
+}
 
 patch_wrapper() {
-    [ -f "$WRAPPER" ] || die "Claude wrapper not found at $WRAPPER — install Claude CLI first."
-    if grep -qF "$MARKER_START" "$WRAPPER"; then
-        ok "Claude wrapper already patched — skipping"
+    local wrapper="$1" label="$2"
+    [ -f "$wrapper" ] || die "$label wrapper not found at $wrapper — install Claude CLI first."
+    if grep -qF "$MARKER_START" "$wrapper"; then
+        ok "$label wrapper already patched — skipping"
         return
     fi
+    backup_wrapper "$wrapper" "$label"
     local tmp
     tmp="$(mktemp)"
     awk -v start="$MARKER_START" -v end="$MARKER_END" -v shim="$SHIM_SO" '
@@ -59,24 +88,25 @@ patch_wrapper() {
             next
         }
         { print }
-    ' "$WRAPPER" > "$tmp"
+    ' "$wrapper" > "$tmp"
     # Verify the insertion actually landed before committing the rewrite.
     if ! grep -qF "$MARKER_START" "$tmp"; then
         rm -f "$tmp"
-        die "Anchor line 'unset LD_PRELOAD' not found in wrapper — cannot patch (wrapper format may have changed). Wrapper left unmodified."
+        die "Anchor line 'unset LD_PRELOAD' not found in $label wrapper — cannot patch (wrapper format may have changed). Wrapper left unmodified."
     fi
-    mv "$tmp" "$WRAPPER"
-    chmod 755 "$WRAPPER"
-    ok "Patched claude wrapper at $WRAPPER"
+    mv "$tmp" "$wrapper"
+    chmod 755 "$wrapper"
+    ok "Patched $label wrapper at $wrapper"
 }
 
 unpatch_wrapper() {
-    if [ ! -f "$WRAPPER" ]; then
-        log "Claude wrapper not found — nothing to unpatch"
+    local wrapper="$1" label="$2"
+    if [ ! -f "$wrapper" ]; then
+        log "$label wrapper not found — nothing to unpatch"
         return
     fi
-    if ! grep -qF "$MARKER_START" "$WRAPPER"; then
-        log "dns-doh block not in wrapper — nothing to remove"
+    if ! grep -qF "$MARKER_START" "$wrapper"; then
+        log "dns-doh block not in $label wrapper — nothing to remove"
         return
     fi
     local tmp
@@ -86,15 +116,17 @@ unpatch_wrapper() {
         $0 == end   { skip=0; next }
         skip        { next }
         { print }
-    ' "$WRAPPER" > "$tmp"
-    mv "$tmp" "$WRAPPER"
-    chmod 755 "$WRAPPER"
-    ok "Removed dns-doh block from claude wrapper"
+    ' "$wrapper" > "$tmp"
+    mv "$tmp" "$wrapper"
+    chmod 755 "$wrapper"
+    ok "Removed dns-doh block from $label wrapper"
 }
 
 # ── Uninstall ─────────────────────────────────────────────────────────────────
 if [ "$MODE" = "uninstall" ]; then
-    unpatch_wrapper
+    unpatch_wrapper "$WRAPPER" "claude"
+    unpatch_wrapper "$NODE_WRAPPER" "node"
+    rm -f "$WRAPPER.pre-dns-doh.bak" "$NODE_WRAPPER.pre-dns-doh.bak"
     if [ -f "$SHIM_SO" ]; then
         rm -f "$SHIM_SO"
         rmdir "$SHIM_DIR" 2>/dev/null || true
@@ -110,7 +142,8 @@ fi
 if [ "$MODE" = "patch" ]; then
     [ -f "$SHIM_SO" ] \
         || die "Shim not found at $SHIM_SO — run 'cc install dns-doh' to (re)install."
-    patch_wrapper
+    patch_wrapper "$WRAPPER" "claude"
+    patch_wrapper "$NODE_WRAPPER" "node"
     exit 0
 fi
 
@@ -144,8 +177,9 @@ file "$SHIM_SO" | grep -q 'ELF' \
     || die "Compiled output at $SHIM_SO is not a valid ELF. Wrapper NOT patched."
 ok "Built $SHIM_SO ($(wc -c < "$SHIM_SO" | tr -d ' ') bytes, $(file -b "$SHIM_SO" | cut -d, -f1))"
 
-# 5. Patch wrapper (only after successful compile + ELF validation)
-patch_wrapper
+# 5. Patch wrappers (only after successful compile + ELF validation)
+patch_wrapper "$WRAPPER" "claude"
+patch_wrapper "$NODE_WRAPPER" "node"
 
 ok "dns-doh installed."
 log "  Validate: CLAUDE_DOH_FORCE=1 claude --version"
