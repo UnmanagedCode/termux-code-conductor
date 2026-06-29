@@ -29,6 +29,7 @@ require_termux
 CC_PROJECTS_DIR="$HOME/cc-projects"
 CC_DIR="$CC_PROJECTS_DIR/code-conductor"
 NPM="$HOME/claude-code-android/bin/npm"
+NPM_PREFIX="$HOME/claude-code-android/npm-prefix"
 
 # ── 1. Update the bootstrap repo ─────────────────────────────────────────────
 [ -d "$REPO/.git" ] || die "$REPO is not a git checkout. Re-clone the repo instead."
@@ -101,7 +102,16 @@ bash "$REPO/scripts/register-alias.sh"
 
 if [ "$UPGRADE_CLI" = "1" ]; then
     log "Force-upgrading Claude CLI to latest"
-    "$NPM" install -g @anthropic-ai/claude-code@latest || die "Claude CLI upgrade failed"
+    env -i \
+        HOME="$HOME" \
+        PREFIX="$PREFIX" \
+        PATH="$(dirname "$NPM"):$PREFIX/bin" \
+        TMPDIR="${TMPDIR:-$PREFIX/tmp}" \
+        TERM="${TERM:-xterm}" \
+        NPM_CONFIG_PREFIX="$NPM_PREFIX" \
+        NPM_CONFIG_REGISTRY="https://registry.npmjs.org/" \
+        "$NPM" install -g @anthropic-ai/claude-code@latest --prefix="$NPM_PREFIX" \
+        || die "Claude CLI upgrade failed"
     ok "Claude CLI now at $("$HOME/claude-code-android/bin/claude" -v)"
 elif [ "$INSTALLER_CHANGED" = "1" ]; then
     warn "Vendored Claude installer changed — re-running install-claude-cli.sh"
