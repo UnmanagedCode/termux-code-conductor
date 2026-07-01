@@ -164,6 +164,9 @@ install_glibc() {
     pacman-key --init 2>/dev/null || true
     pacman-key --populate 2>/dev/null || true
 
+    info "Upgrading pacman local database (fresh installs ship a pre-4.2 placeholder)..."
+    pacman-db-upgrade 2>/dev/null || true
+
     info "Installing glibc-runner via pacman..."
     if ! pacman -Sy glibc-runner --noconfirm --assume-installed bash,patchelf,resolv-conf; then
         [ "$sig_patched" = 1 ] && [ -f "$pacman_conf.bak" ] && mv "$pacman_conf.bak" "$pacman_conf"
@@ -515,7 +518,7 @@ main() {
     smoke_test
     append_bashrc
 
-    printf '\n%s%sAll done.%s  Open a new shell and run: %sclaude -v%s\n' \
+    printf '\n%s%sAll done.%s  Run: %ssource ~/.bashrc && claude -v%s\n' \
         "$C_BLD" "$C_GRN" "$C_NC" "$C_BLD" "$C_NC"
 }
 
