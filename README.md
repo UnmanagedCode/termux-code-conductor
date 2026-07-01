@@ -186,6 +186,8 @@ cc install dns-doh      # compile + install (alias: cc install doh)
 
 **How it works:** the shim intercepts `getaddrinfo()`. Fast path: tries the system resolver first — zero overhead on healthy networks. On failure, falls back to `curl https://1.1.1.1/dns-query` (port 443), synthesizes a glibc-compatible `addrinfo` chain, and returns it. Cloudflare's DoH endpoint is used; `curl` is Termux's bionic binary (uses Android's own resolver, bypasses the blocked port 53). The shim's `execve`/`posix_spawn` interposers strip `LD_PRELOAD` from spawned children, so bionic children (git-over-ssh, etc.) never inherit the glibc shim and crash.
 
+**Bun ≥ 1.4.0 `connect()` fallback:** starting with the Bun runtime in Claude Code ≥ 2.1.197, DNS no longer goes only through `getaddrinfo`. Bun bundles an internal c-ares resolver (its default backend on Linux) that talks raw DNS directly. On Android there is no `/etc/resolv.conf` (`/etc` → `/system/etc`, absent), so c-ares defaults to `127.0.0.1:53` — dead, since non-root can't bind port 53 — producing an `ECONNREFUSED` storm and flaky/intermittent resolution that the `getaddrinfo` interposer alone can't fix. The shim therefore also interposes `connect()`: a connect to `127.0.0.1:53` is rewritten to a loopback ephemeral high port where a small responder (forked once at load, while single-threaded) speaks the DNS wire protocol and answers via the **same** DoH path. It never binds port 53 and never edits host DNS config; both c-ares transports (TCP under `use-vc`, UDP otherwise) are covered because c-ares `connect()`s the socket either way. Set `CLAUDE_DOH_DEBUG=1` to trace the redirect on stderr.
+
 **Validate:**
 
 ```bash
