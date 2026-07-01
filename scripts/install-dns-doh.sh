@@ -47,8 +47,9 @@ SHIM_SO="$SHIM_DIR/dohshim.so"
 WRAPPER="$HOME/claude-code-android/bin/claude"
 NODE_WRAPPER="$HOME/claude-code-android/bin/node"
 
-MARKER_START='# >>> dns-doh shim >>>'
-MARKER_END='# <<< dns-doh shim <<<'
+# DOH_MARKER_START/END and the shim-block emitter live in lib.sh — shared with
+# vendor/claude-install.sh's write_wrappers() so both patchers agree on the
+# exact block text.
 
 # ── Wrapper helpers ───────────────────────────────────────────────────────────
 # Both helpers take the wrapper path as $1. The marker block re-exports ONLY the
@@ -70,27 +71,16 @@ backup_wrapper() {
 patch_wrapper() {
     local wrapper="$1" label="$2"
     [ -f "$wrapper" ] || die "$label wrapper not found at $wrapper — install Claude CLI first."
-    if grep -qF "$MARKER_START" "$wrapper"; then
+    if grep -qF "$DOH_MARKER_START" "$wrapper"; then
         ok "$label wrapper already patched — skipping"
         return
     fi
     backup_wrapper "$wrapper" "$label"
     local tmp
     tmp="$(mktemp)"
-    awk -v start="$MARKER_START" -v end="$MARKER_END" -v shim="$SHIM_SO" '
-        /^unset LD_PRELOAD$/ {
-            print
-            print ""
-            print start
-            print "_DOH_SHIM=\"" shim "\""
-            print "[ -f \"$_DOH_SHIM\" ] && export LD_PRELOAD=\"$_DOH_SHIM\""
-            print end
-            next
-        }
-        { print }
-    ' "$wrapper" > "$tmp"
+    dns_doh_insert_block "$SHIM_SO" < "$wrapper" > "$tmp"
     # Verify the insertion actually landed before committing the rewrite.
-    if ! grep -qF "$MARKER_START" "$tmp"; then
+    if ! grep -qF "$DOH_MARKER_START" "$tmp"; then
         rm -f "$tmp"
         die "Anchor line 'unset LD_PRELOAD' not found in $label wrapper — cannot patch (wrapper format may have changed). Wrapper left unmodified."
     fi
@@ -105,13 +95,13 @@ unpatch_wrapper() {
         log "$label wrapper not found — nothing to unpatch"
         return
     fi
-    if ! grep -qF "$MARKER_START" "$wrapper"; then
+    if ! grep -qF "$DOH_MARKER_START" "$wrapper"; then
         log "dns-doh block not in $label wrapper — nothing to remove"
         return
     fi
     local tmp
     tmp="$(mktemp)"
-    awk -v start="$MARKER_START" -v end="$MARKER_END" '
+    awk -v start="$DOH_MARKER_START" -v end="$DOH_MARKER_END" '
         $0 == start { skip=1; next }
         $0 == end   { skip=0; next }
         skip        { next }

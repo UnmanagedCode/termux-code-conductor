@@ -63,3 +63,38 @@ optional_project_url() {
     optional_projects_table \
         | awk -F'\t' -v n="$1" '$1==n {print $2; found=1} END {exit !found}'
 }
+
+# ── dns-doh shim wrapper patch ──────────────────────────────────────────────
+# Single source of truth for the dns-doh marker block, shared by
+# install-dns-doh.sh (post-hoc patch of an existing wrapper) and
+# vendor/claude-install.sh's write_wrappers() (bakes the block in at
+# generation time so a regenerated wrapper is never observably unpatched).
+DOH_MARKER_START='# >>> dns-doh shim >>>'
+DOH_MARKER_END='# <<< dns-doh shim <<<'
+
+# Echo the dns-doh shim block. $1: absolute path to dohshim.so.
+dns_doh_shim_block() {
+    printf '%s\n' "$DOH_MARKER_START"
+    printf '_DOH_SHIM="%s"\n' "$1"
+    printf '[ -f "$_DOH_SHIM" ] && export LD_PRELOAD="$_DOH_SHIM"\n'
+    printf '%s\n' "$DOH_MARKER_END"
+}
+
+# Filter (stdin -> stdout): insert dns_doh_shim_block($1) immediately after
+# the first `unset LD_PRELOAD` line. Callers must only invoke this on content
+# that isn't already patched (both current callers already guard on that).
+# $1: absolute path to dohshim.so.
+dns_doh_insert_block() {
+    local block
+    block="$(dns_doh_shim_block "$1")"
+    awk -v block="$block" '
+        /^unset LD_PRELOAD$/ && !done {
+            print
+            print ""
+            print block
+            done=1
+            next
+        }
+        { print }
+    '
+}
