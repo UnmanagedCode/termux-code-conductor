@@ -28,9 +28,15 @@
 # re-run: cc install dns-doh
 #
 # Usage:
-#   install-dns-doh.sh              # full install (compile + patch wrapper)
-#   install-dns-doh.sh --patch-only # re-apply wrapper patch only (no compile)
-#   install-dns-doh.sh --uninstall  # remove shim and wrapper patch
+#   install-dns-doh.sh                # full install (compile + patch wrapper)
+#   install-dns-doh.sh --patch-only   # re-apply wrapper patch only (no compile)
+#   install-dns-doh.sh --compile-only # recompile the shim only (no wrapper patch)
+#   install-dns-doh.sh --uninstall    # remove shim and wrapper patch
+#
+# --compile-only rebuilds dohshim.so from source (same atomic compile-to-temp +
+# ELF-validate + rename as full install) without touching the wrappers. Recurring
+# migration 0004 invokes it after an update when the checked-out source is newer
+# than the installed shim, so `cc upgrade` picks up shim source fixes.
 
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -39,10 +45,11 @@ require_termux
 
 MODE=install
 case "${1:-}" in
-    --patch-only) MODE=patch ;;
-    --uninstall)  MODE=uninstall ;;
+    --patch-only)   MODE=patch ;;
+    --compile-only) MODE=compile ;;
+    --uninstall)    MODE=uninstall ;;
     "") MODE=install ;;
-    *) die "Unknown argument: ${1}. Usage: $0 [--patch-only|--uninstall]" ;;
+    *) die "Unknown argument: ${1}. Usage: $0 [--patch-only|--compile-only|--uninstall]" ;;
 esac
 
 SHIM_SRC="$HERE/dns-doh/dohshim.c"
@@ -116,6 +123,44 @@ unpatch_wrapper() {
     ok "Removed dns-doh block from $label wrapper"
 }
 
+# ── Compile helper ────────────────────────────────────────────────────────────
+# Ensure clang, compile the shim to a temp file in $SHIM_DIR, ELF-validate it,
+# then atomically rename it onto $SHIM_SO. Shared by the full-install path and
+# --compile-only. Compiling to a temp + same-filesystem rename(2) keeps the swap
+# atomic: a failed compile never corrupts the live shim, and a process starting
+# mid-compile can never LD_PRELOAD a partial .so. Does NOT touch the wrappers.
+compile_shim() {
+    # 1. Ensure clang (build dep, pulled in only for this optional feature)
+    if ! command -v clang >/dev/null 2>&1; then
+        log "Installing clang (build dependency for dns-doh)"
+        pkg install -y clang file </dev/null \
+            || die "Failed to install clang. Try 'pkg install -y clang' manually."
+    fi
+    command -v clang >/dev/null 2>&1 || die "clang still not found after install."
+    ok "clang at $(command -v clang)"
+
+    [ -f "$SHIM_SRC" ] \
+        || die "Source not found at $SHIM_SRC — is the bootstrap repo intact?"
+    mkdir -p "$SHIM_DIR"
+    log "Compiling dns-doh shim"
+    local tmp_so
+    tmp_so="$(mktemp "$SHIM_DIR/.dohshim.XXXXXX.so")"
+    if ! clang -shared -fPIC -nostdlib -fno-stack-protector -O2 \
+            "$SHIM_SRC" -o "$tmp_so"; then
+        rm -f "$tmp_so"
+        die "Compile failed — see clang output above. Live shim unchanged."
+    fi
+
+    # Validate the ELF on the TEMP file, then atomically swap it into place.
+    if ! file "$tmp_so" | grep -q 'ELF'; then
+        rm -f "$tmp_so"
+        die "Compiled output is not a valid ELF. Live shim unchanged."
+    fi
+    chmod 755 "$tmp_so"
+    mv -f "$tmp_so" "$SHIM_SO"
+    ok "Built $SHIM_SO ($(wc -c < "$SHIM_SO" | tr -d ' ') bytes, $(file -b "$SHIM_SO" | cut -d, -f1))"
+}
+
 # ── Uninstall ─────────────────────────────────────────────────────────────────
 if [ "$MODE" = "uninstall" ]; then
     unpatch_wrapper "$WRAPPER" "claude"
@@ -141,48 +186,24 @@ if [ "$MODE" = "patch" ]; then
     exit 0
 fi
 
+# ── Compile-only ──────────────────────────────────────────────────────────────
+if [ "$MODE" = "compile" ]; then
+    compile_shim
+    ok "dns-doh shim recompiled."
+    exit 0
+fi
+
 # ── Full install ──────────────────────────────────────────────────────────────
 
-# 1. Ensure clang (build dep, pulled in only for this optional feature)
-if ! command -v clang >/dev/null 2>&1; then
-    log "Installing clang (build dependency for dns-doh)"
-    pkg install -y clang file </dev/null \
-        || die "Failed to install clang. Try 'pkg install -y clang' manually."
-fi
-command -v clang >/dev/null 2>&1 || die "clang still not found after install."
-ok "clang at $(command -v clang)"
+# Compile + ELF-validate + atomic swap (ensures clang first).
+compile_shim
 
-# 2. Confirm curl present (hard dep from core install step 2)
+# Confirm curl present (hard runtime dep from core install step 2).
 command -v curl >/dev/null 2>&1 \
     || die "curl not found — is the Claude CLI core install complete?"
 ok "curl at $(command -v curl)"
 
-# 3. Compile to a temp file in the SAME dir as $SHIM_SO, so the final mv is a
-#    same-filesystem rename(2) — atomic. Compiling straight onto the live shim
-#    would truncate-then-write in place: a failed compile corrupts it, and a
-#    process starting mid-compile could LD_PRELOAD a partial .so (fatal to the
-#    bionic loader). On any failure the live $SHIM_SO is left completely untouched.
-[ -f "$SHIM_SRC" ] \
-    || die "Source not found at $SHIM_SRC — is the bootstrap repo intact?"
-mkdir -p "$SHIM_DIR"
-log "Compiling dns-doh shim"
-tmp_so="$(mktemp "$SHIM_DIR/.dohshim.XXXXXX.so")"
-if ! clang -shared -fPIC -nostdlib -fno-stack-protector -O2 \
-        "$SHIM_SRC" -o "$tmp_so"; then
-    rm -f "$tmp_so"
-    die "Compile failed — see clang output above. Live shim unchanged, wrapper NOT patched."
-fi
-
-# 4. Validate the ELF on the TEMP file, then atomically swap it into place.
-if ! file "$tmp_so" | grep -q 'ELF'; then
-    rm -f "$tmp_so"
-    die "Compiled output is not a valid ELF. Live shim unchanged, wrapper NOT patched."
-fi
-chmod 755 "$tmp_so"
-mv -f "$tmp_so" "$SHIM_SO"
-ok "Built $SHIM_SO ($(wc -c < "$SHIM_SO" | tr -d ' ') bytes, $(file -b "$SHIM_SO" | cut -d, -f1))"
-
-# 5. Patch wrappers (only after successful compile + ELF validation)
+# Patch wrappers (only after successful compile + ELF validation).
 patch_wrapper "$WRAPPER" "claude"
 patch_wrapper "$NODE_WRAPPER" "node"
 
