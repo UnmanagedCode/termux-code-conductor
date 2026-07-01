@@ -4,7 +4,11 @@
 #
 # A C LD_PRELOAD shim intercepts getaddrinfo() and falls back to DoH via curl
 # on port 443 (Cloudflare 1.1.1.1) when the system resolver fails. Zero overhead
-# on healthy networks (fast path tries the system resolver first).
+# on healthy networks (fast path tries the system resolver first). The shim also
+# interposes connect(): Bun >= 1.4.0's internal c-ares resolver bypasses
+# getaddrinfo and hits a dead 127.0.0.1:53 on Android (no /etc/resolv.conf), so
+# the shim redirects that connect to a loopback responder that answers via the
+# same DoH path. See dohshim.c's "connect() DoH fallback" section.
 #
 # struct-ABI note: both the claude wrapper (Bun claude.exe) and the node wrapper
 # (node.real) launch *glibc* binaries via glibc-runner's ld.so. The wrappers
