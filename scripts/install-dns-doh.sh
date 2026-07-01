@@ -157,18 +157,29 @@ command -v curl >/dev/null 2>&1 \
     || die "curl not found — is the Claude CLI core install complete?"
 ok "curl at $(command -v curl)"
 
-# 3. Compile — must succeed before we touch the wrapper
+# 3. Compile to a temp file in the SAME dir as $SHIM_SO, so the final mv is a
+#    same-filesystem rename(2) — atomic. Compiling straight onto the live shim
+#    would truncate-then-write in place: a failed compile corrupts it, and a
+#    process starting mid-compile could LD_PRELOAD a partial .so (fatal to the
+#    bionic loader). On any failure the live $SHIM_SO is left completely untouched.
 [ -f "$SHIM_SRC" ] \
     || die "Source not found at $SHIM_SRC — is the bootstrap repo intact?"
 mkdir -p "$SHIM_DIR"
 log "Compiling dns-doh shim"
-clang -shared -fPIC -nostdlib -fno-stack-protector -O2 \
-    "$SHIM_SRC" -o "$SHIM_SO" \
-    || die "Compile failed — see clang output above. Wrapper NOT patched."
+tmp_so="$(mktemp "$SHIM_DIR/.dohshim.XXXXXX.so")"
+if ! clang -shared -fPIC -nostdlib -fno-stack-protector -O2 \
+        "$SHIM_SRC" -o "$tmp_so"; then
+    rm -f "$tmp_so"
+    die "Compile failed — see clang output above. Live shim unchanged, wrapper NOT patched."
+fi
 
-# 4. Validate ELF before patching the wrapper
-file "$SHIM_SO" | grep -q 'ELF' \
-    || die "Compiled output at $SHIM_SO is not a valid ELF. Wrapper NOT patched."
+# 4. Validate the ELF on the TEMP file, then atomically swap it into place.
+if ! file "$tmp_so" | grep -q 'ELF'; then
+    rm -f "$tmp_so"
+    die "Compiled output is not a valid ELF. Live shim unchanged, wrapper NOT patched."
+fi
+chmod 755 "$tmp_so"
+mv -f "$tmp_so" "$SHIM_SO"
 ok "Built $SHIM_SO ($(wc -c < "$SHIM_SO" | tr -d ' ') bytes, $(file -b "$SHIM_SO" | cut -d, -f1))"
 
 # 5. Patch wrappers (only after successful compile + ELF validation)
