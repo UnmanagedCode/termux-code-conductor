@@ -146,7 +146,7 @@ fi
 # 1. Ensure clang (build dep, pulled in only for this optional feature)
 if ! command -v clang >/dev/null 2>&1; then
     log "Installing clang (build dependency for dns-doh)"
-    pkg install -y clang </dev/null \
+    pkg install -y clang file </dev/null \
         || die "Failed to install clang. Try 'pkg install -y clang' manually."
 fi
 command -v clang >/dev/null 2>&1 || die "clang still not found after install."

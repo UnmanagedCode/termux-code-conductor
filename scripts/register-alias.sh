@@ -100,4 +100,4 @@ complete -F _cc_complete cc
 $MARK_END
 EOF
 
-ok "Registered cc aliases + dispatcher in $BASHRC (run 'source ~/.bashrc' or open a new shell)"
+ok "Registered cc aliases + dispatcher in $BASHRC (run 'source ~/.bashrc' to use them now)"
