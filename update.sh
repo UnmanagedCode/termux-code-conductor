@@ -6,6 +6,11 @@
 #   ./update.sh           pull latest + re-run idempotent bootstrap steps
 #   ./update.sh --cli     same + force-upgrade Claude CLI to latest npm release
 #   ./update.sh --no-restart   skip restarting the CC server even if it changed
+#
+# When Code Conductor's code changed and the server is running, this triggers a
+# GRACEFUL restart-and-resume via its POST /admin/restart endpoint: live turns
+# drain to idle (up to 60s, never force-interrupted), the server relaunches
+# itself, and sessions are resurrected with --resume. --no-restart skips it.
 
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -125,23 +130,20 @@ fi
 
 if [ "$CC_CHANGED" = "1" ] && [ "$RESTART" = "1" ]; then
     if curl -sf "http://127.0.0.1:8787/" >/dev/null 2>&1; then
-        log "Restarting Code Conductor server (code changed)"
-        # Stop every node server.js process whose cwd is $CC_DIR (matches both
-        # 'node server.js' from `npm start` and 'node /abs/.../server.js' from
-        # the self-respawn path).
-        for pid in $(pgrep -f 'node.*server\.js' 2>/dev/null); do
-            cwd=$(readlink "/proc/$pid/cwd" 2>/dev/null) || continue
-            [ "$cwd" = "$CC_DIR" ] && kill "$pid" 2>/dev/null || true
-        done
-        sleep 1
-        ( cd "$CC_DIR" && PROJECTS_ROOT="$CC_PROJECTS_DIR" nohup "$NPM" start >server.log 2>&1 & )
-        for i in $(seq 1 10); do
-            sleep 1
-            if curl -sf "http://127.0.0.1:8787/" >/dev/null 2>&1; then
-                ok "Code Conductor restarted at http://127.0.0.1:8787"
-                break
-            fi
-        done
+        log "Requesting graceful restart + resume of Code Conductor server (code changed)"
+        # POST /admin/restart {"resume":true} → drainAndScheduleRestart: winds
+        # live turns down to idle (60s grace, never force-interrupts), writes a
+        # resume manifest, then relaunches the server ITSELF and resurrects the
+        # sessions (--resume). The endpoint replies 202 immediately and the server
+        # stays up through the (possibly long) drain, so we POST-and-report rather
+        # than polling for a bounce we can't observe — resume self-heals.
+        if curl -sf -X POST -H 'content-type: application/json' \
+                -d '{"resume":true}' \
+                "http://127.0.0.1:8787/admin/restart" >/dev/null 2>&1; then
+            ok "Graceful restart requested — server will drain live turns (up to 60s), then relaunch and resume sessions."
+        else
+            warn "Restart request failed — check the server; restart manually with: cc start"
+        fi
     else
         log "Code Conductor code changed but server isn't running — start it with: cc start"
     fi

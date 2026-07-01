@@ -204,6 +204,8 @@ cc install dns-doh --uninstall        # removes .so + both wrapper patches + .pr
 
 **Wrapper re-generation:** the `claude` and `node` wrappers are only regenerated during a full fresh Claude CLI install. `cc upgrade` (`npm install -g @latest`) does **not** touch them. `cc update` automatically re-applies the patch to either wrapper if it detects the shim is present but that wrapper's block is missing (recurring migrations `0001` for claude, `0003` for node). After a manual wipe (`rm -rf ~/claude-code-android`) and reinstall, re-run `cc install dns-doh`.
 
+**Compiled shim auto-recompile:** the wrapper patch only re-exports the `.so`; it does not rebuild it. So a fix to `scripts/dns-doh/dohshim.c` (e.g. the `connect()` interposer) would otherwise stay stale after `cc upgrade` until a manual reinstall. Recurring migration `0004` closes this: on every update, if `dohshim.so` is already installed (opt-in — never auto-installed on a host that didn't choose it) and the checked-out `dohshim.c` is **newer** than the installed `.so`, it runs `install-dns-doh.sh --compile-only` to rebuild the shim. The rebuild uses the same atomic compile-to-temp + rename as a full install, so it's safe under running sessions; unchanged source is a no-op.
+
 ## Updating
 
 ```bash
@@ -216,7 +218,7 @@ cc upgrade                  # or: cc-upgrade   — same as `cc update --cli`
 1. `git pull --ff-only` the bootstrap repo, Code Conductor, and every installed optional project (the harness, code-share, …); prints which files changed.
 2. Re-runs `register-alias.sh` (no-op if `~/.bashrc` is already current).
 3. If CC's or any installed optional project's `package.json`/lockfile changed → `npm install` in that dir.
-4. If CC code changed and the server is running → graceful restart with `PROJECTS_ROOT=~/cc-projects`.
+4. If CC code changed and the server is running → **graceful restart + resume** via CC's `POST /admin/restart` (`{"resume":true}`): live turns drain to idle (up to 60s, never force-interrupted), then the server relaunches itself and resurrects sessions with `--resume`. `--no-restart` skips it; if the server isn't running you're told to `cc start`.
 5. Only re-runs the Claude CLI installer if `scripts/vendor/claude-install.sh` itself changed.
 
 **Flags:**
@@ -224,7 +226,7 @@ cc upgrade                  # or: cc-upgrade   — same as `cc update --cli`
 - `--cli` — also force-upgrade the Claude CLI to the latest npm release (`npm i -g @anthropic-ai/claude-code@latest`). Useful when Anthropic ships a new version even though nothing in this repo changed. `cc upgrade` is shorthand for `cc update --cli`.
 - `--no-restart` — pull and reinstall deps but don't bounce the running server.
 
-`update.sh` also runs `scripts/run-migrations.sh` at the end of every update. Recurring reconcilers (e.g. re-applying the dns-doh wrapper patch if a fresh Claude CLI install wiped it) always run. One-time migrations run once and record completion in `~/claude-code-android/.state/migrations/`. A failing migration emits a warning but never aborts the update.
+`update.sh` also runs `scripts/run-migrations.sh` at the end of every update. Recurring reconcilers (e.g. re-applying the dns-doh wrapper patch if a fresh Claude CLI install wiped it, or recompiling `dohshim.so` when its source changed — migration `0004`) always run. One-time migrations run once and record completion in `~/claude-code-android/.state/migrations/`. A failing migration emits a warning but never aborts the update.
 
 ## Extending: Migrations
 
@@ -289,7 +291,8 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   │   ├── 0000-node-check-fix.recurring.sh  # ensure node wrapper exempts --check/--eval/… from NODE_OPTIONS hoisting
 │   │   ├── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh claude wrapper patch if missing
 │   │   ├── 0002-node-test-flag.recurring.sh  # ensure node wrapper exempts --test from NODE_OPTIONS hoisting
-│   │   └── 0003-dns-doh-node-patch.recurring.sh # re-apply dns-doh node wrapper patch if missing
+│   │   ├── 0003-dns-doh-node-patch.recurring.sh # re-apply dns-doh node wrapper patch if missing
+│   │   └── 0004-dns-doh-recompile.recurring.sh # recompile dohshim.so if source newer than installed .so
 │   ├── install-claude-cli.sh
 │   ├── install-cc.sh           # clones Code Conductor, sets group, starts server
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project
