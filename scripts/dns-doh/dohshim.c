@@ -1,5 +1,11 @@
-/* dohshim.c — LD_PRELOAD getaddrinfo() interposer that adds a DNS-over-HTTPS
- * fallback for Claude Code (Bun) on Termux/glibc.
+/* dohshim.c — LD_PRELOAD shim for Claude Code (Bun) on Termux/glibc.
+ *
+ * Two jobs:
+ *  1. getaddrinfo() interposer: DNS-over-HTTPS fallback (see below).
+ *  2. exec-family interposers: rewrite each child's env to strip LD_PRELOAD
+ *     (prevents crashing Bionic children) and repoint CLAUDE_CODE_EXECPATH off
+ *     the ld.so path onto the claude-mux shim, so Claude's Bash-tool grep/find
+ *     shell functions resolve to the bundled ripgrep/bfs. See fix_child_env().
  *
  * Why: Claude (claude.exe, a Bun binary) resolves via glibc -> hardcoded
  * 8.8.8.8. Captive/hotel networks block direct external DNS, so resolution
@@ -134,6 +140,22 @@ static spawn_t   real_spawnp  = 0;
 static connect_t real_connect = 0;
 static volatile int doh_resolver_port = 0;  /* host order; 0 = responder not up */
 
+/* CLAUDE_CODE_EXECPATH fix (v2). claude.exe sets CLAUDE_CODE_EXECPATH in every
+ * child's env to process.execPath, which on this glibc-runner install is the
+ * dynamic linker (bin/claude launches via `ld.so … claude.exe`). Claude Code's
+ * Bash-tool grep/find shell functions then run `exec -a ugrep "$CLAUDE_CODE_EXECPATH"
+ * -G …` → `ld.so -G …` → "cannot open shared object file". We repoint that env
+ * var, in the child env of every exec, at the claude-mux shim, which re-execs
+ * claude.exe via ld.so with argv[0] set to ugrep/bfs/rg — so grep and find hit
+ * claude's bundled ripgrep/bfs. Only the linker value (contains "ld-linux") is
+ * rewritten; all other values pass through untouched. */
+#define CLAUDE_MUX_ENTRY \
+    "CLAUDE_CODE_EXECPATH=/data/data/com.termux/files/home/claude-code-android/bin/claude-mux"
+
+/* Exported sentinel so the recurring rebuild migration can detect (via grep -F)
+ * whether a compiled dohshim.so already carries this CLAUDE_CODE_EXECPATH fix. */
+const char dohshim_variant[] = "dohshim-v2-execpath";
+
 /* Return a copy of envp with every LD_PRELOAD= entry removed. This is what stops
  * the shim from propagating into exec'd children: a Bionic binary (e.g. ssh
  * resolving github.com) that inherited LD_PRELOAD would load this glibc shim and
@@ -155,6 +177,37 @@ static char **strip_preload(char *const envp[]) {
     for (int i = 0; i < n; i++) {
         if (strncmp(envp[i], "LD_PRELOAD=", 11) == 0) continue;
         e[j++] = envp[i];
+    }
+    e[j] = 0;
+    return e;
+}
+
+/* Superset of strip_preload used by the exec-family interposers: drop every
+ * LD_PRELOAD= entry (as before) AND, when CLAUDE_CODE_EXECPATH points at the
+ * glibc dynamic linker (value contains "ld-linux"), replace that entry with
+ * CLAUDE_MUX_ENTRY. Allocates a copy only when something actually changes;
+ * returns envp unchanged otherwise (exec beats abort on malloc failure). NULL
+ * stays NULL to preserve execve/posix_spawn empty-env semantics. The rewritten
+ * slot points at a static string literal, valid for the life of the image. */
+static char **fix_child_env(char *const envp[]) {
+    if (!envp) return (char **)envp;
+    int n = 0, has_preload = 0, fix_exec = -1;
+    while (envp[n]) {
+        if (strncmp(envp[n], "LD_PRELOAD=", 11) == 0) {
+            has_preload = 1;
+        } else if (strncmp(envp[n], "CLAUDE_CODE_EXECPATH=", 21) == 0 &&
+                   strstr(envp[n], "ld-linux")) {
+            fix_exec = n;
+        }
+        n++;
+    }
+    if (!has_preload && fix_exec < 0) return (char **)envp;
+    char **e = (char **)malloc(sizeof(char *) * (n + 1));
+    if (!e) return (char **)envp;
+    int j = 0;
+    for (int i = 0; i < n; i++) {
+        if (strncmp(envp[i], "LD_PRELOAD=", 11) == 0) continue;
+        e[j++] = (i == fix_exec) ? (char *)CLAUDE_MUX_ENTRY : envp[i];
     }
     e[j] = 0;
     return e;
@@ -550,40 +603,42 @@ __attribute__((constructor))
 static void doh_ctor(void) { doh_responder_init(); }
 
 /* ---- exec-family interposers ----------------------------------------------
- * LD_PRELOAD is inherited by every exec'd child, which force-loads this glibc
- * shim into Bionic Termux binaries (ssh, git) and crashes them. Strip
- * LD_PRELOAD from the child's environment on the way out. Glibc children
- * (claude/node) self-correct: their wrappers unset LD_PRELOAD and the claude
- * wrapper re-sets the shim. Covers the real spawners — bash uses execve,
- * Bun/claude.exe uses posix_spawn. The variadic execl* family is not
+ * Every exec'd child's environment is passed through fix_child_env(), which
+ * (1) strips LD_PRELOAD — it is inherited by every child and would force-load
+ * this glibc shim into Bionic Termux binaries (ssh, git), crashing them; glibc
+ * children (claude/node) self-correct since their wrappers unset LD_PRELOAD and
+ * the claude wrapper re-sets the shim — and (2) repoints CLAUDE_CODE_EXECPATH
+ * off the ld.so path onto the claude-mux shim so the Bash-tool grep/find
+ * functions work. Covers the real spawners — bash uses execve, Bun/claude.exe
+ * uses posix_spawn, Node/libuv uses execvp. The variadic execl* family is not
  * intercepted (glibc's execl* call execve directly, bypassing our execv*); it
  * is not on the crash path. */
 int execve(const char *path, char *const argv[], char *const envp[]) {
     if (!real_execve) real_execve = (execve_t)dlsym(RTLD_NEXT, "execve");
-    return real_execve(path, argv, strip_preload(envp));
+    return real_execve(path, argv, fix_child_env(envp));
 }
 int execvpe(const char *file, char *const argv[], char *const envp[]) {
     if (!real_execvpe) real_execvpe = (execvpe_t)dlsym(RTLD_NEXT, "execvpe");
-    return real_execvpe(file, argv, strip_preload(envp));
+    return real_execvpe(file, argv, fix_child_env(envp));
 }
 int execv(const char *path, char *const argv[]) {
     if (!real_execve) real_execve = (execve_t)dlsym(RTLD_NEXT, "execve");
-    return real_execve(path, argv, strip_preload(environ));
+    return real_execve(path, argv, fix_child_env(environ));
 }
 int execvp(const char *file, char *const argv[]) {
     /* delegate to the real execvpe so glibc's $PATH search is preserved */
     if (!real_execvpe) real_execvpe = (execvpe_t)dlsym(RTLD_NEXT, "execvpe");
-    return real_execvpe(file, argv, strip_preload(environ));
+    return real_execvpe(file, argv, fix_child_env(environ));
 }
 int posix_spawn(pid_t *pid, const char *path, const void *file_actions,
                 const void *attrp, char *const argv[], char *const envp[]) {
     if (!real_spawn) real_spawn = (spawn_t)dlsym(RTLD_NEXT, "posix_spawn");
-    return real_spawn(pid, path, file_actions, attrp, argv, strip_preload(envp));
+    return real_spawn(pid, path, file_actions, attrp, argv, fix_child_env(envp));
 }
 int posix_spawnp(pid_t *pid, const char *file, const void *file_actions,
                  const void *attrp, char *const argv[], char *const envp[]) {
     if (!real_spawnp) real_spawnp = (spawn_t)dlsym(RTLD_NEXT, "posix_spawnp");
-    return real_spawnp(pid, file, file_actions, attrp, argv, strip_preload(envp));
+    return real_spawnp(pid, file, file_actions, attrp, argv, fix_child_env(envp));
 }
 
 /* tiny atoi for a digits-only string */

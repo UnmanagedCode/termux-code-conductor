@@ -188,6 +188,8 @@ cc install dns-doh      # compile + install (alias: cc install doh)
 
 **Bun ≥ 1.4.0 `connect()` fallback:** starting with the Bun runtime in Claude Code ≥ 2.1.197, DNS no longer goes only through `getaddrinfo`. Bun bundles an internal c-ares resolver (its default backend on Linux) that talks raw DNS directly. On Android there is no `/etc/resolv.conf` (`/etc` → `/system/etc`, absent), so c-ares defaults to `127.0.0.1:53` — dead, since non-root can't bind port 53 — producing an `ECONNREFUSED` storm and flaky/intermittent resolution that the `getaddrinfo` interposer alone can't fix. The shim therefore also interposes `connect()`: a connect to `127.0.0.1:53` is rewritten to a loopback ephemeral high port where a small responder (forked once at load, while single-threaded) speaks the DNS wire protocol and answers via the **same** DoH path. It never binds port 53 and never edits host DNS config; both c-ares transports (TCP under `use-vc`, UDP otherwise) are covered because c-ares `connect()`s the socket either way. Set `CLAUDE_DOH_DEBUG=1` to trace the redirect on stderr.
 
+**`grep`/`find` fix (bundled ripgrep/bfs):** the shim's exec interposers do double duty. Besides stripping `LD_PRELOAD`, they also repoint `CLAUDE_CODE_EXECPATH` in each child's environment. Claude Code's Bash-tool shell shadows `grep`/`find` with functions that run `exec -a ugrep "$CLAUDE_CODE_EXECPATH" -G …` / `exec -a bfs … -S dfs …` to reach its bundled ripgrep/bfs — but claude sets that variable to `process.execPath`, which on this glibc-runner install is the **ld.so** path (`claude.exe` launches via `ld.so … claude.exe`). `ld.so -G …` tries to load `-G` as a shared object → `grep`/`find` fail inside every Bash tool call. `fix_child_env()` replaces the value (only when it is the linker — contains `ld-linux`) with `~/claude-code-android/bin/claude-mux`, a tiny wrapper that re-execs `claude.exe` via `ld.so` with `argv[0]` set to `ugrep`/`bfs`/`rg` (dispatched on the leading flag). The rewrite happens in the parent `claude.exe` because the Bash-tool shell itself has no `LD_PRELOAD` (already stripped), so no interposer runs there. The `dohshim-v2-execpath` sentinel string marks a `.so` carrying this fix.
+
 **Validate:**
 
 ```bash
@@ -202,7 +204,7 @@ cc install dns-doh --uninstall        # removes .so + both wrapper patches + .pr
 # pkg remove clang                    # optional: remove clang if no longer needed
 ```
 
-**Wrapper re-generation:** the `claude` and `node` wrappers are only regenerated during a full fresh Claude CLI install. `cc upgrade` (`npm install -g @latest`) does **not** touch them. `cc update` automatically re-applies the patch to either wrapper if it detects the shim is present but that wrapper's block is missing (recurring migrations `0001` for claude, `0003` for node). After a manual wipe (`rm -rf ~/claude-code-android`) and reinstall, re-run `cc install dns-doh`.
+**Wrapper re-generation:** the `claude`, `node`, and `claude-mux` wrappers are only regenerated during a full fresh Claude CLI install. `cc upgrade` (`npm install -g @latest`) does **not** touch them. `cc update` automatically re-applies the patch to either wrapper if it detects the shim is present but that wrapper's block is missing (recurring migrations `0001` for claude, `0003` for node), and re-creates `bin/claude-mux` if missing/outdated (migration `0005`). After a manual wipe (`rm -rf ~/claude-code-android`) and reinstall, re-run `cc install dns-doh`.
 
 **Compiled shim auto-recompile:** the wrapper patch only re-exports the `.so`; it does not rebuild it. So a fix to `scripts/dns-doh/dohshim.c` (e.g. the `connect()` interposer) would otherwise stay stale after `cc upgrade` until a manual reinstall. Recurring migration `0004` closes this: on every update, if `dohshim.so` is already installed (opt-in — never auto-installed on a host that didn't choose it) and the checked-out `dohshim.c` is **newer** than the installed `.so`, it runs `install-dns-doh.sh --compile-only` to rebuild the shim. The rebuild uses the same atomic compile-to-temp + rename as a full install, so it's safe under running sessions; unchanged source is a no-op.
 
@@ -292,7 +294,8 @@ To also wipe the projects root: `rm -rf ~/cc-projects` — but that'll take ever
 │   │   ├── 0001-dns-doh-patch.recurring.sh   # re-apply dns-doh claude wrapper patch if missing
 │   │   ├── 0002-node-test-flag.recurring.sh  # ensure node wrapper exempts --test from NODE_OPTIONS hoisting
 │   │   ├── 0003-dns-doh-node-patch.recurring.sh # re-apply dns-doh node wrapper patch if missing
-│   │   └── 0004-dns-doh-recompile.recurring.sh # recompile dohshim.so if source newer than installed .so
+│   │   ├── 0004-dns-doh-recompile.recurring.sh # recompile dohshim.so if source newer than installed .so
+│   │   └── 0005-claude-mux.recurring.sh      # (re)create bin/claude-mux grep/find multiplexer shim if missing
 │   ├── install-claude-cli.sh
 │   ├── install-cc.sh           # clones Code Conductor, sets group, starts server
 │   ├── install-optional.sh     # cc install <name>: clone+tag+npm an optional project
