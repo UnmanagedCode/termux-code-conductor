@@ -412,7 +412,17 @@ CLAUDE_WRAPPER
     _apply_doh_shim "$tmp_claude" "claude"
     _finish_wrapper "$tmp_claude" "$BIN_DIR/claude"
 
-    ok "Wrote bin/{node,npm,npx,claude}"
+    # bin/claude-mux — target of dohshim's CLAUDE_CODE_EXECPATH rewrite. Claude
+    # Code's Bash-tool grep/find functions exec it as ugrep/bfs; it re-execs
+    # claude.exe via ld.so with argv[0] set so the bundled ripgrep/bfs run. No
+    # dns-doh block (ripgrep/bfs need no DNS). Emitter shared via lib.sh.
+    local tmp_mux; tmp_mux="$(mktemp "$BIN_DIR/.claude-mux.XXXXXX")"
+    claude_mux_wrapper "$sh" "$GLIBC_LDSO" "$GLIBC_LIBDIR" \
+        "$NPM_PREFIX/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe" \
+        > "$tmp_mux"
+    _finish_wrapper "$tmp_mux" "$BIN_DIR/claude-mux"
+
+    ok "Wrote bin/{node,npm,npx,claude,claude-mux}"
 }
 
 # ── Step 10: Install Claude Code into the custom npm prefix ────────────────
